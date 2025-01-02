@@ -3,41 +3,36 @@
 import taichi as ti
 
 @ti.func
-def calc(i: int) -> int:
+def calc(i: ti.Int32, offset: ti.Int32) -> ti.Int64:
     res = 0
-    for j in range(999):
-        res += j * j * i
+    for j in range(99999):
+        res = res + j * j * i + offset
     return res
 
-@ti.log_time # 注意这两个修饰器的顺序 不能反过来
+# 注意这两个修饰器的顺序 不能反过来
+@ti.log_time
 @ti.kernel
-def calc_ti(n, data):
+def calc_ti(n, data, offset = 3):
     for i in range(n):
-        data[i] = calc(i)
+        data[i] = calc(i, offset)
 
 @ti.log_time
-def calc_cpu(n, data):
+def calc_no(n, data, offset = 3):
     for i in range(n):
-        data[i] = calc(i)
+        data[i] = calc(i, offset)
 
 def main():
-    N = int(4e4)
-    data = [0] * N
-    calc_ti(N, data)
-    calc_cpu(N, data)
+    N = int(4e3)
+    data1, data2 = [0] * N, [0] * N
+    calc_ti(N, data1, offset=5)
+    calc_no(N, data2, offset=5)
 
-def test_1(func):
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-    
-    return wrapper
-
-@test_1
-def test_2():
-    for i in range(5):
-        print(i)
+    ti.log_message(
+        "result check passed"
+        if sum([1 if data1[i] == data2[i] else 0 for i in range(N)]) == N
+        else
+        "result check failed"
+    )
 
 if __name__ == "__main__":
-    # main()
-
-    test_2()
+    main()
