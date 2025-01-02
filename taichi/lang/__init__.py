@@ -112,3 +112,8 @@ def convert_kernel_main_loop_to_func(
     ast.fix_missing_locations(result_func)
 
     return result_func
+
+def convert_func_to_pure_calc_task(
+    func: ast.FunctionDef
+) -> ast.FunctionDef:
+    ...

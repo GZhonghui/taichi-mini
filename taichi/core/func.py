@@ -1,9 +1,20 @@
+import ast
+import inspect
+
 from taichi.tool import *
 import taichi.lang
 import taichi.core.func_manager
 
 # 模仿 taichi 的 func 修饰器
 def func(f):
+    source_code = inspect.getsource(f)
+    tree = ast.parse(source_code)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == f.__name__:
+            node.decorator_list = []
+            pure_calc_task = taichi.lang.convert_func_to_pure_calc_task(node)
+
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
     # 将包装后的函数的 name 设定为和原函数一致
