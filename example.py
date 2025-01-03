@@ -5,7 +5,7 @@ import taichi as ti
 @ti.func
 def calc(i: ti.Int32, offset: ti.Int32) -> ti.Int64:
     res = 0
-    for j in range(99999):
+    for j in range(9999):
         res = res + j * j * i + offset
     return res
 
@@ -22,7 +22,7 @@ def calc_no(n, data, offset = 3):
         data[i] = calc(i, offset)
 
 def main():
-    N = int(4e3)
+    N = int(4e2)
     data1, data2 = [0] * N, [0] * N
     calc_ti(N, data1, offset=5)
     calc_no(N, data2, offset=5)

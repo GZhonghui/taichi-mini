@@ -1,13 +1,18 @@
 import time
+import ctypes
 
 # 一些工具函数
 
 __all__ = [
+    "BP",
     "log_message",
     "log_warning",
     "log_error",
     "log_time"
 ]
+
+def BP(bytes: bytes):
+    return ctypes.cast(bytes, ctypes.POINTER(ctypes.c_uint8))
 
 def log(*args, **kwargs):
     # get the current time and format it as [hh:mm:ss]
