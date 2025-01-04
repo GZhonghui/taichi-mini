@@ -3,10 +3,13 @@
 import taichi as ti
 
 @ti.func
-def calc(i: ti.Int32, offset: ti.Int32) -> ti.Int64:
+def calc(i: ti.Int32, offset: ti.Int64) -> ti.Int64:
     res = 0
-    for j in range(9999):
-        res = res + j * j * i + offset
+    for j in range(10000):
+        a1 = j - 10
+        a2 = a1 + i
+        a3 = a2 * offset
+        res = res + a3
     return res
 
 # 注意这两个修饰器的顺序 不能反过来
