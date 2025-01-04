@@ -25,13 +25,102 @@ void init()
     taichi_engine = std::unique_ptr<llvm::ExecutionEngine>(Engine);
 }
 
+DataType OperationValue::get_data_type(
+    Function *function
+) const
+{
+    DataType res = DataType::Int32;
+    if(operation_value_type == OperationValueType::Constant) {
+        res = constant_value_type;
+    } else if(operation_value_type == OperationValueType::Variable) {
+        auto find_res = function->find_variable(variable_name);
+        if(find_res.first) {
+            res = find_res.second;
+        }
+    }
+    return res;
+}
+
+llvm::Value *OperationValue::construct_llvm_value(
+    Function *function,
+    llvm::IRBuilder<> *builder,
+    llvm::LLVMContext *context
+) const
+{
+    llvm::Value *res = nullptr;
+    if(operation_value_type == OperationValueType::Constant) {
+        uint32_t cache_32 = 0;
+        uint64_t cache_64 = 0;
+        switch(constant_value_type) {
+            case DataType::Int32:
+                memcpy(&cache_32, constant_value, 4);
+                res = llvm::ConstantInt::get(
+                    to_llvm_type(constant_value_type, context),
+                    cache_32
+                );
+                break;
+            case DataType::Int64:
+                memcpy(&cache_64, constant_value, 8);
+                res = llvm::ConstantInt::get(
+                    to_llvm_type(constant_value_type, context),
+                    cache_64
+                );
+                break;
+            case DataType::Float32:
+                memcpy(&cache_32, constant_value, 4);
+                res = llvm::ConstantFP::get(
+                    to_llvm_type(constant_value_type, context),
+                    static_cast<double>(
+                        reinterpret_cast<float&>(cache_32)
+                    )
+                );
+                break;
+            case DataType::Float64:
+                memcpy(&cache_64, constant_value, 8);
+                res = llvm::ConstantFP::get(
+                    to_llvm_type(constant_value_type, context),
+                    reinterpret_cast<double&>(cache_64)
+                );
+                break;
+        }
+    } else if(operation_value_type == OperationValueType::Variable) {
+        auto find_result = function->find_variable(variable_name);
+        if(find_result.first) {
+            res = builder->CreateLoad(
+                to_llvm_type(find_result.second, context),
+                find_result.first
+            );
+        }
+    }
+    return res;
+}
+
 std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::string &variable_name)
 {
-    if(variable_type_table.count(variable_name)) {
-        return std::make_pair(variable_table[variable_name], variable_type_table[variable_name]);
+    for(int32_t i = variable_stack.size() - 1; i >= 0; i -= 1) {
+        auto env = &(variable_stack[i]);
+        if(env->count(variable_name)) {
+            return env->at(variable_name);
+        }
     }
-
+    
     return std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32);
+}
+
+llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType type)
+{
+    auto res = find_variable(name);
+    if(!res.first) {
+        llvm::AllocaInst *ptr = current_builder->CreateAlloca(
+            to_llvm_type(type, taichi_context.get())
+        );
+        variable_stack.back()[name] = std::make_pair(
+            ptr,
+            type
+        );
+        return ptr;
+    }
+    return res.first;
 }
 
 void Function::build_begin(
@@ -44,10 +133,9 @@ void Function::build_begin(
     this->return_type = return_type;
     
     this->argument_list.clear();
-    this->variable_type_table.clear();
+    this->variable_stack.clear();
     for(auto arg : argument_list) {
         this->argument_list.push_back(arg);
-        this->variable_type_table[arg.name] = arg.type;
     }
 
     this->current_module = std::make_unique<llvm::Module>(
@@ -58,7 +146,10 @@ void Function::build_begin(
         *taichi_context
     );
 
-    llvm::Type *llvm_return_type = to_llvm_type(return_type, taichi_context.get());
+    llvm::Type *llvm_return_type = to_llvm_type(
+        this->return_type,
+        taichi_context.get()
+    );
     std::vector<llvm::Type *> llvm_args_type;
     for(auto arg : this->argument_list) {
         llvm_args_type.push_back(to_llvm_type(arg.type, taichi_context.get()));
@@ -85,21 +176,22 @@ void Function::build_begin(
     );
     this->current_builder->SetInsertPoint(entry_block);
 
-    this->variable_table.clear();
+    this->variable_stack.push_back(
+        std::unordered_map<
+            std::string,
+            std::pair<llvm::AllocaInst *, DataType>
+        >()
+    );
     llvm::Function::arg_iterator arg_begin = this->llvm_function->arg_begin();
     for(auto arg : this->argument_list) {
-        this->variable_table[arg.name] = current_builder->CreateAlloca(
-            to_llvm_type(arg.type, taichi_context.get()),
-            nullptr
-        );
-        current_builder->CreateStore(arg_begin, this->variable_table[arg.name]);
-        arg_begin ++;
+        auto ptr = alloc_variable(arg.name, arg.type);
+        current_builder->CreateStore(arg_begin++, ptr);
     }
 }
 
 void Function::build_finish()
 {
-
+    taichi_engine->addModule(std::move(current_module));
 }
 
 void Function::loop_begin(
@@ -123,28 +215,26 @@ void Function::assignment_statement(
 )
 {
     if(name == value.variable_name) return;
-    if(!variable_type_table.count(name)) {
-        variable_type_table[name] = value.get_data_type(variable_type_table);
-        variable_table[name] = current_builder->CreateAlloca(
-            to_llvm_type(variable_type_table[name], taichi_context.get()),
-            nullptr
-        );
+
+    auto target_find_result = find_variable(name);
+    if(!target_find_result.first) {
+        alloc_variable(name, value.get_data_type(this));
     }
 
+    target_find_result = find_variable(name);
     current_builder->CreateStore(
         cast(
-            value.get_data_type(variable_type_table),
-            variable_type_table[name],
+            value.get_data_type(this),
+            target_find_result.second,
             value.construct_llvm_value(
-                variable_type_table,
-                variable_table,
+                this,
                 current_builder.get(),
                 taichi_context.get()
             ),
             current_builder.get(),
             taichi_context.get()
         ),
-        variable_table[name]
+        target_find_result.first
     );
 }
 
@@ -155,25 +245,23 @@ void Function::assignment_statement(
     const OperationValue &right_value
 )
 {
-    if(!variable_type_table.count(result_name)) {
-        DataType left_type = left_value.get_data_type(variable_type_table);
-        DataType right_type = right_value.get_data_type(variable_type_table);
+    auto find_result = find_variable(result_name);
+    if(!find_result.first) {
+        DataType left_type = left_value.get_data_type(this);
+        DataType right_type = right_value.get_data_type(this);
         DataType result_type = calc_type(left_type, right_type);
 
-        variable_type_table[result_name] = result_type;
-        variable_table[result_name] = current_builder->CreateAlloca(
-            to_llvm_type(result_type, taichi_context.get()),
-            nullptr
-        );
+        alloc_variable(result_name, result_type);
     }
 
-    DataType result_type = variable_type_table[result_name];
+    find_result = find_variable(result_name);
+    DataType result_type = find_result.second;
+
     llvm::Value *llvm_left_value = cast(
-        left_value.get_data_type(variable_type_table),
+        left_value.get_data_type(this),
         result_type,
         left_value.construct_llvm_value(
-            variable_type_table,
-            variable_table,
+            this,
             current_builder.get(),
             taichi_context.get()
         ),
@@ -182,11 +270,10 @@ void Function::assignment_statement(
     );
 
     llvm::Value *llvm_right_value = cast(
-        right_value.get_data_type(variable_type_table),
+        right_value.get_data_type(this),
         result_type,
         right_value.construct_llvm_value(
-            variable_type_table,
-            variable_table,
+            this,
             current_builder.get(),
             taichi_context.get()
         ),
@@ -250,22 +337,23 @@ void Function::assignment_statement(
             break;
     }
     if(llvm_result) {
-        current_builder->CreateStore(llvm_result, variable_table[result_name]);
+        current_builder->CreateStore(llvm_result, find_result.first);
     }
 }
 
 void Function::return_statement(const std::string &return_variable_name)
 {
-    if(variable_type_table.count(return_variable_name)) {
+    auto find_result = find_variable(return_variable_name);
+    if(find_result.first) {
         llvm::Value *load_value = current_builder->CreateLoad(
             to_llvm_type(
-                variable_type_table[return_variable_name],
+                find_result.second,
                 taichi_context.get()
             ),
-            variable_table[return_variable_name]
+            find_result.first
         );
         llvm::Value *cast_value = cast(
-            variable_type_table[return_variable_name],
+            find_result.second,
             return_type,
             load_value,
             current_builder.get(),
@@ -275,7 +363,6 @@ void Function::return_statement(const std::string &return_variable_name)
     } else {
         current_builder->CreateRet(llvm_default_value(
             return_type,
-            current_builder.get(),
             taichi_context.get()
         ));
     }

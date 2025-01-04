@@ -22,6 +22,9 @@ namespace llvm_taichi
 {
     typedef uint8_t Byte;
 
+    class OperationValue;
+    class Function;
+
     enum DataType {
         Int32 = 1,
         Int64 = 2,
@@ -34,6 +37,11 @@ namespace llvm_taichi
         Sub = 2,
         Mul = 3,
         Div = 4
+    };
+
+    enum OperationValueType {
+        Constant = 1,
+        Variable = 2
     };
 
     struct Argument {
@@ -77,16 +85,13 @@ namespace llvm_taichi
 
     inline llvm::Value *llvm_default_value(
         DataType type,
-        llvm::IRBuilder<> *builder,
         llvm::LLVMContext *context
     ) {
         llvm::Value *res = nullptr;
         switch (type) {
             case DataType::Int32:
-                res = builder->getInt32(0);
-                break;
             case DataType::Int64:
-                res = builder->getInt64(0);
+                res = llvm::ConstantInt::get(to_llvm_type(type, context), 0);
                 break;
             case DataType::Float32:
             case DataType::Float64:
@@ -182,96 +187,49 @@ namespace llvm_taichi
         return res;
     }
 
-    enum OperationValueType {
-        Constant = 1,
-        Variable = 2
-    };
+    class OperationValue {
+        friend class Function;
 
-    struct OperationValue {
-        OperationValueType operation_type;
+    protected:
+        OperationValueType operation_value_type;
         std::string variable_name;
         DataType constant_value_type;
         Byte constant_value[8];
+    
+    public:
+        DataType get_data_type(
+            Function *function
+        ) const;
 
-        inline DataType get_data_type(
-            std::unordered_map<std::string, DataType> &ref_table
-        ) const {
-            DataType res = DataType::Int32;
-            if(operation_type == OperationValueType::Constant) {
-                res = constant_value_type;
-            } else if(
-                operation_type == OperationValueType::Variable
-                && ref_table.count(variable_name)
-            ) {
-                res = ref_table[variable_name];
-            }
-            return res;
-        }
-
-        inline llvm::Value *construct_llvm_value(
-            std::unordered_map<std::string, DataType> &type_ref_table,
-            std::unordered_map<std::string, llvm::AllocaInst *> &variable_ref_table,
+        llvm::Value *construct_llvm_value(
+            Function *function,
             llvm::IRBuilder<> *builder,
             llvm::LLVMContext *context
-        ) const {
-            llvm::Value *res = nullptr;
-            if(operation_type == OperationValueType::Constant) {
-                uint32_t cache_i32 = 0;
-                uint64_t cache_i64 = 0;
-                float cache_f32 = 0;
-                double cache_f64 = 0;
-                switch(constant_value_type) {
-                    case DataType::Int32:
-                        memcpy(&cache_i32, constant_value, 4);
-                        res = builder->getInt32(cache_i32);
-                        break;
-                    case DataType::Int64:
-                        memcpy(&cache_i64, constant_value, 8);
-                        res = builder->getInt64(cache_i64);
-                        break;
-                    case DataType::Float32:
-                        memcpy(&cache_f32, constant_value, 4);
-                        res = llvm::ConstantFP::get(
-                            to_llvm_type(constant_value_type, context),
-                            static_cast<double>(cache_f32)
-                        );
-                        break;
-                    case DataType::Float64:
-                        memcpy(&cache_f64, constant_value, 8);
-                        res = llvm::ConstantFP::get(
-                            to_llvm_type(constant_value_type, context),
-                            cache_f64
-                        );
-                        break;
-                }
-            } else if(operation_type == OperationValueType::Variable) {
-                if(type_ref_table.count(variable_name)) {
-                    res = builder->CreateLoad(
-                        to_llvm_type(type_ref_table[variable_name], context),
-                        variable_ref_table[variable_name]
-                    );
-                }
-            }
-            return res;
-        }
+        ) const;
     };
 
     void init();
 
     class Function {
+        friend class OperationValue;
+
     protected:
         std::string name;
         std::vector<Argument> argument_list;
         DataType return_type;
         llvm::Function *llvm_function;
-        std::unordered_map<std::string, DataType> variable_type_table;
-        std::unordered_map<std::string, llvm::AllocaInst *> variable_table;
+        std::vector< 
+            std::unordered_map<
+                std::string,
+                std::pair<llvm::AllocaInst *, DataType>
+            >
+        > variable_stack;
         std::unique_ptr<llvm::Module> current_module;
         std::unique_ptr< llvm::IRBuilder<> > current_builder;
 
     protected:
-        friend struct OperationValue;
         std::pair<llvm::AllocaInst *, DataType> find_variable(const std::string &variable_name);
+        llvm::AllocaInst *alloc_variable(const std::string &name, DataType type);
 
     public:
         void build_begin(
