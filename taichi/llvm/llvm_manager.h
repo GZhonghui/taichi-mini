@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <stack>
 #include <unordered_map>
 
 #include <llvm/IR/LLVMContext.h>
@@ -91,7 +92,7 @@ namespace llvm_taichi
         switch (type) {
             case DataType::Int32:
             case DataType::Int64:
-                res = llvm::ConstantInt::get(to_llvm_type(type, context), 0);
+                res = llvm::ConstantInt::get(to_llvm_type(type, context), 0, true);
                 break;
             case DataType::Float32:
             case DataType::Float64:
@@ -226,10 +227,11 @@ namespace llvm_taichi
         > variable_stack;
         std::unique_ptr<llvm::Module> current_module;
         std::unique_ptr< llvm::IRBuilder<> > current_builder;
+        std::stack<llvm::BasicBlock *> current_blocks;
 
     protected:
         std::pair<llvm::AllocaInst *, DataType> find_variable(const std::string &variable_name);
-        llvm::AllocaInst *alloc_variable(const std::string &name, DataType type);
+        llvm::AllocaInst *alloc_variable(const std::string &name, DataType type, bool force_local = false);
 
     public:
         void build_begin(
@@ -240,9 +242,9 @@ namespace llvm_taichi
         void build_finish();
         void loop_begin(
             const std::string &loop_index_name,
-            uint32_t l,
-            uint32_t r,
-            uint32_t s
+            int32_t l,
+            int32_t r,
+            int32_t s
         );
         void loop_finish();
         void assignment_statement(

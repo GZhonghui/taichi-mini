@@ -56,14 +56,16 @@ llvm::Value *OperationValue::construct_llvm_value(
                 memcpy(&cache_32, constant_value, 4);
                 res = llvm::ConstantInt::get(
                     to_llvm_type(constant_value_type, context),
-                    cache_32
+                    static_cast<uint64_t>(cache_32),
+                    true
                 );
                 break;
             case DataType::Int64:
                 memcpy(&cache_64, constant_value, 8);
                 res = llvm::ConstantInt::get(
                     to_llvm_type(constant_value_type, context),
-                    cache_64
+                    cache_64,
+                    true
                 );
                 break;
             case DataType::Float32:
@@ -107,9 +109,14 @@ std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::strin
     return std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32);
 }
 
-llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType type)
+llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType type, bool force_local)
 {
-    auto res = find_variable(name);
+    auto res = force_local ? (
+        variable_stack.back().count(name)
+        ? variable_stack.back()[name]
+        : std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32)
+    ) : find_variable(name);
+
     if(!res.first) {
         llvm::AllocaInst *ptr = current_builder->CreateAlloca(
             to_llvm_type(type, taichi_context.get())
@@ -145,6 +152,7 @@ void Function::build_begin(
     this->current_builder = std::make_unique< llvm::IRBuilder<> >(
         *taichi_context
     );
+    this->current_blocks = std::stack<llvm::BasicBlock *>();
 
     llvm::Type *llvm_return_type = to_llvm_type(
         this->return_type,
@@ -175,6 +183,7 @@ void Function::build_begin(
         this->llvm_function
     );
     this->current_builder->SetInsertPoint(entry_block);
+    this->current_blocks.push(entry_block);
 
     this->variable_stack.push_back(
         std::unordered_map<
@@ -196,17 +205,72 @@ void Function::build_finish()
 
 void Function::loop_begin(
     const std::string &loop_index_name,
-    uint32_t l,
-    uint32_t r,
-    uint32_t s
+    int32_t l,
+    int32_t r,
+    int32_t s
 )
 {
+    llvm::BasicBlock *if_blcok = llvm::BasicBlock::Create(
+        *taichi_context,
+        "loop_if",
+        this->llvm_function
+    );
+    llvm::BasicBlock *body_block = llvm::BasicBlock::Create(
+        *taichi_context,
+        "loop_body",
+        this->llvm_function
+    );
+    llvm::BasicBlock *next_block = llvm::BasicBlock::Create(
+        *taichi_context,
+        "loop_next",
+        this->llvm_function
+    );
 
+    variable_stack.push_back(
+        std::unordered_map<
+            std::string,
+            std::pair<llvm::AllocaInst *, DataType>
+        >()
+    );
+    current_blocks.pop();
+    current_blocks.push(next_block);
+    current_blocks.push(body_block);
+
+    auto loop_index_ptr = alloc_variable(loop_index_name, DataType::Int32, true);
+    current_builder->CreateStore(
+        llvm::ConstantInt::get(
+            to_llvm_type(DataType::Int32, taichi_context.get()),
+            static_cast<uint64_t>(l),
+            true
+        ),
+        loop_index_ptr
+    );
+    current_builder->CreateBr(if_blcok);
+
+    current_builder->SetInsertPoint(if_blcok);
+    llvm::LoadInst *load_loop_index = current_builder->CreateLoad(
+        to_llvm_type(DataType::Int32, taichi_context.get()),
+        loop_index_ptr
+    );
+    llvm::Value *compare_result = current_builder->CreateICmpSLT(
+        load_loop_index,
+        llvm::ConstantInt::get(
+            to_llvm_type(DataType::Int32, taichi_context.get()),
+            static_cast<uint64_t>(r),
+            true
+        )
+    );
+    current_builder->CreateCondBr(compare_result, body_block, next_block);
+
+    current_builder->SetInsertPoint(body_block);
 }
 
 void Function::loop_finish()
 {
-
+    // TODO
+    variable_stack.pop_back();
+    current_blocks.pop();
+    current_builder->SetInsertPoint(current_blocks.top());
 }
 
 void Function::assignment_statement(
@@ -345,7 +409,7 @@ void Function::return_statement(const std::string &return_variable_name)
 {
     auto find_result = find_variable(return_variable_name);
     if(find_result.first) {
-        llvm::Value *load_value = current_builder->CreateLoad(
+        llvm::LoadInst *load_value = current_builder->CreateLoad(
             to_llvm_type(
                 find_result.second,
                 taichi_context.get()

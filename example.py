@@ -5,11 +5,12 @@ import taichi as ti
 @ti.func
 def calc(i: ti.Int32, offset: ti.Int64) -> ti.Int64:
     res = 0
-    for j in range(10000):
-        a1 = j - 10
-        a2 = a1 + i
-        a3 = a2 * offset
-        res = res + a3
+    for j in range(100):
+        for k in range(0, 200, 2):
+            s = j + k
+            x = s + i
+            y = x * offset
+            res = res + y
     return res
 
 # 注意这两个修饰器的顺序 不能反过来
