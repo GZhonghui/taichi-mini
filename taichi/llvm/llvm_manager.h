@@ -3,17 +3,20 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
 #include <unordered_map>
 
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
-#include <llvm/IR/Verifier.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/MCJIT.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/raw_ostream.h>
 
 namespace llvm_taichi
 {
@@ -50,15 +53,35 @@ namespace llvm_taichi
     };
 
     inline uint8_t type_size(DataType type) {
+        uint8_t res = 1;
         switch(type) {
             case DataType::Int32:
             case DataType::Float32:
-                return 4;
+                res = 4;
             case DataType::Int64:
             case DataType::Float64:
-                return 8;
+                res = 8;
         }
-        return 1;
+        return res;
+    }
+
+    inline llvm::Type *to_llvm_type(DataType type, llvm::LLVMContext *context) {
+        llvm::Type *res = nullptr;
+        switch (type) {
+            case DataType::Int32:
+                res = llvm::Type::getInt32Ty(*context);
+                break;
+            case DataType::Int64:
+                res = llvm::Type::getInt64Ty(*context);
+                break;
+            case DataType::Float32:
+                res = llvm::Type::getFloatTy(*context);
+                break;
+            case DataType::Float64:
+                res = llvm::Type::getBFloatTy(*context);
+                break;
+        }
+        return res;
     }
 
     void init();
@@ -69,6 +92,9 @@ namespace llvm_taichi
         std::vector<Argument> argument_list;
         DataType return_type;
         std::unordered_map<std::string, DataType> variable_type_table;
+        llvm::Function *llvm_function;
+        std::unique_ptr<llvm::Module> current_module;
+        std::unique_ptr< llvm::IRBuilder<> > current_builder;
 
     public:
         void build_begin(
@@ -93,6 +119,8 @@ namespace llvm_taichi
     };
 
     extern std::unordered_map< std::string, std::shared_ptr<Function> > taichi_func_table;
+    extern std::unique_ptr<llvm::ExecutionEngine> taichi_engine;
+    extern std::unique_ptr<llvm::LLVMContext> taichi_context;
 }
 
 #endif
