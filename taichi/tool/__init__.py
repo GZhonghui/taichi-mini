@@ -21,13 +21,13 @@ def log(*args, **kwargs):
     print(timestamp, *args, **kwargs)
 
 def log_message(*args, **kwargs):
-    log("[MESSAGE]", *args, **kwargs)
+    log("[MESSAGE] >>", *args, **kwargs)
 
 def log_warning(*args, **kwargs):
-    log("[WARNING]", *args, **kwargs)
+    log("[WARNING] >>", *args, **kwargs)
 
 def log_error(*args, **kwargs):
-    log("[ ERROR ]", *args, **kwargs)
+    log("[ ERROR ] >>", *args, **kwargs)
 
 def log_time(func):
     def wrapper(*args, **kwargs):

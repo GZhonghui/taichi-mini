@@ -4,25 +4,29 @@ namespace llvm_taichi
 {
 
 std::unordered_map< std::string, std::shared_ptr<Function> > taichi_func_table;
-std::unique_ptr<llvm::ExecutionEngine> taichi_engine;
-std::unique_ptr<llvm::LLVMContext> taichi_context;
+std::unique_ptr<LLVMUnit> taichi_llvm_unit;
 
 void init()
 {
+    taichi_llvm_unit = std::make_unique<LLVMUnit>();
+
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
-    taichi_context = std::make_unique<llvm::LLVMContext>();
-    auto init_module = std::make_unique<llvm::Module>("TaichiInitModule", *taichi_context);
+    taichi_llvm_unit->context = new llvm::LLVMContext();
+    auto init_module = std::make_unique<llvm::Module>("TaichiInitModule", *(taichi_llvm_unit->context));
 
     std::string Error;
     llvm::ExecutionEngine *Engine = llvm::EngineBuilder(std::move(init_module))
         .setErrorStr(&Error)
         .setOptLevel(llvm::CodeGenOptLevel::Aggressive)
         .create();
-
-    taichi_engine = std::unique_ptr<llvm::ExecutionEngine>(Engine);
+    if(!Engine || Error.length()) {
+        Out::Log(pType::ERROR, Error.c_str());
+    }
+    
+    taichi_llvm_unit->engine = Engine;
 }
 
 DataType OperationValue::get_data_type(
@@ -119,7 +123,7 @@ llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType typ
 
     if(!res.first) {
         llvm::AllocaInst *ptr = current_builder->CreateAlloca(
-            to_llvm_type(type, taichi_context.get())
+            to_llvm_type(type, taichi_llvm_unit->context)
         );
         variable_stack.back()[name] = std::make_pair(
             ptr,
@@ -147,20 +151,20 @@ void Function::build_begin(
 
     this->current_module = std::make_unique<llvm::Module>(
         "taichi_module_" + function_name,
-        *taichi_context
+        *(taichi_llvm_unit->context)
     );
     this->current_builder = std::make_unique< llvm::IRBuilder<> >(
-        *taichi_context
+        *(taichi_llvm_unit->context)
     );
     this->current_blocks = std::stack<llvm::BasicBlock *>();
 
     llvm::Type *llvm_return_type = to_llvm_type(
         this->return_type,
-        taichi_context.get()
+        taichi_llvm_unit->context
     );
     std::vector<llvm::Type *> llvm_args_type;
     for(auto arg : this->argument_list) {
-        llvm_args_type.push_back(to_llvm_type(arg.type, taichi_context.get()));
+        llvm_args_type.push_back(to_llvm_type(arg.type, taichi_llvm_unit->context));
     }
     llvm::ArrayRef<llvm::Type *> llvm_args_type_array(llvm_args_type);
 
@@ -178,7 +182,7 @@ void Function::build_begin(
     );
 
     llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(
-        *taichi_context,
+        *(taichi_llvm_unit->context),
         "function_entry",
         this->llvm_function
     );
@@ -200,7 +204,7 @@ void Function::build_begin(
 
 void Function::build_finish()
 {
-    taichi_engine->addModule(std::move(current_module));
+    taichi_llvm_unit->engine->addModule(std::move(current_module));
 }
 
 void Function::loop_begin(
@@ -211,17 +215,17 @@ void Function::loop_begin(
 )
 {
     llvm::BasicBlock *if_blcok = llvm::BasicBlock::Create(
-        *taichi_context,
+        *(taichi_llvm_unit->context),
         "loop_if",
         this->llvm_function
     );
     llvm::BasicBlock *body_block = llvm::BasicBlock::Create(
-        *taichi_context,
+        *(taichi_llvm_unit->context),
         "loop_body",
         this->llvm_function
     );
     llvm::BasicBlock *next_block = llvm::BasicBlock::Create(
-        *taichi_context,
+        *(taichi_llvm_unit->context),
         "loop_next",
         this->llvm_function
     );
@@ -240,7 +244,7 @@ void Function::loop_begin(
     auto loop_index_ptr = alloc_variable(loop_index_name, DataType::Int32, true);
     current_builder->CreateStore(
         llvm::ConstantInt::get(
-            to_llvm_type(DataType::Int32, taichi_context.get()),
+            to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
             static_cast<uint64_t>(l),
             true
         ),
@@ -254,13 +258,13 @@ void Function::loop_begin(
 
     current_builder->SetInsertPoint(if_blcok);
     llvm::LoadInst *load_loop_index = current_builder->CreateLoad(
-        to_llvm_type(DataType::Int32, taichi_context.get()),
+        to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
         loop_index_ptr
     );
     llvm::Value *compare_result = current_builder->CreateICmpSLT(
         load_loop_index,
         llvm::ConstantInt::get(
-            to_llvm_type(DataType::Int32, taichi_context.get()),
+            to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
             static_cast<uint64_t>(r),
             true
         )
@@ -273,13 +277,13 @@ void Function::loop_begin(
 void Function::loop_finish()
 {
     llvm::LoadInst *load = current_builder->CreateLoad(
-        to_llvm_type(DataType::Int32, taichi_context.get()),
+        to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
         current_loop_update.top().first
     );
     llvm::Value *add_result = current_builder->CreateAdd(
         load,
         llvm::ConstantInt::get(
-            to_llvm_type(DataType::Int32, taichi_context.get()),
+            to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
             static_cast<uint64_t>(current_loop_update.top().second),
             true
         )
@@ -317,10 +321,10 @@ void Function::assignment_statement(
             value.construct_llvm_value(
                 this,
                 current_builder.get(),
-                taichi_context.get()
+                taichi_llvm_unit->context
             ),
             current_builder.get(),
-            taichi_context.get()
+            taichi_llvm_unit->context
         ),
         target_find_result.first
     );
@@ -351,10 +355,10 @@ void Function::assignment_statement(
         left_value.construct_llvm_value(
             this,
             current_builder.get(),
-            taichi_context.get()
+            taichi_llvm_unit->context
         ),
         current_builder.get(),
-        taichi_context.get()
+        taichi_llvm_unit->context
     );
 
     llvm::Value *llvm_right_value = cast(
@@ -363,10 +367,10 @@ void Function::assignment_statement(
         right_value.construct_llvm_value(
             this,
             current_builder.get(),
-            taichi_context.get()
+            taichi_llvm_unit->context
         ),
         current_builder.get(),
-        taichi_context.get()
+        taichi_llvm_unit->context
     );
 
     llvm::Value *llvm_result = nullptr;
@@ -436,7 +440,7 @@ void Function::return_statement(const std::string &return_variable_name)
         llvm::LoadInst *load_value = current_builder->CreateLoad(
             to_llvm_type(
                 find_result.second,
-                taichi_context.get()
+                taichi_llvm_unit->context
             ),
             find_result.first
         );
@@ -445,13 +449,13 @@ void Function::return_statement(const std::string &return_variable_name)
             return_type,
             load_value,
             current_builder.get(),
-            taichi_context.get()
+            taichi_llvm_unit->context
         );
         current_builder->CreateRet(cast_value);
     } else {
         current_builder->CreateRet(llvm_default_value(
             return_type,
-            taichi_context.get()
+            taichi_llvm_unit->context
         ));
     }
 }
@@ -497,7 +501,7 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer)
     llvm::ArrayRef<llvm::GenericValue> args_array(args);
 
     if(this->llvm_function) {
-        llvm::GenericValue result = taichi_engine->runFunction(
+        llvm::GenericValue result = taichi_llvm_unit->engine->runFunction(
             this->llvm_function,
             args_array
         );

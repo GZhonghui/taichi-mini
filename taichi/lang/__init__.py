@@ -1,8 +1,10 @@
 import os
 import ast
+import ctypes
+import taichi.type
+import taichi.llvm
 from taichi.lang.numba import ReplaceTopRangeToPrange
 from taichi.tool import *
-import taichi.type
 
 # 本模块的内容用于处理 AST
 
@@ -209,3 +211,16 @@ def convert_func_to_pure_calc_task(
     ast.fix_missing_locations(result_func)
 
     return result_func
+
+def build_llvm_func(func: ast.FunctionDef):
+    args = func.args
+    returns = func.returns
+    
+    # function_name_b = func.name.encode(encoding="ascii")
+    # taichi.llvm.c_function_begin(
+    #     BP(function_name_b),
+    #     0,
+    #     BP(function_name_b),
+    #     BP(function_name_b),
+    #     0
+    # )

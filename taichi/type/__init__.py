@@ -37,3 +37,11 @@ basic_types = [
     Float32.__name__,
     Float64.__name__
 ]
+
+# sync with cpp
+type_id = {
+    Int32.__name__: 1,
+    Int64.__name__: 2,
+    Float32.__name__: 3,
+    Float64.__name__: 4
+}

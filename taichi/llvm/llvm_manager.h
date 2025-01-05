@@ -19,6 +19,8 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "../tool/print.h"
+
 namespace llvm_taichi
 {
     typedef uint8_t Byte;
@@ -265,9 +267,29 @@ namespace llvm_taichi
         Function() = default;
     };
 
+    class LLVMUnit {
+    public:
+        llvm::ExecutionEngine *engine;
+        llvm::LLVMContext *context;
+
+    public:
+        inline LLVMUnit() {
+            engine = nullptr;
+            context = nullptr;
+        }
+
+        inline ~LLVMUnit() {
+            if(engine) { // must destroy before context
+                delete engine;
+            }
+            if(context) {
+                delete context;
+            }
+        }
+    };
+
     extern std::unordered_map< std::string, std::shared_ptr<Function> > taichi_func_table;
-    extern std::unique_ptr<llvm::ExecutionEngine> taichi_engine;
-    extern std::unique_ptr<llvm::LLVMContext> taichi_context;
+    extern std::unique_ptr<LLVMUnit> taichi_llvm_unit;
 }
 
 #endif
