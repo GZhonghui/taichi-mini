@@ -228,6 +228,7 @@ namespace llvm_taichi
         std::unique_ptr<llvm::Module> current_module;
         std::unique_ptr< llvm::IRBuilder<> > current_builder;
         std::stack<llvm::BasicBlock *> current_blocks;
+        std::stack< std::pair<llvm::AllocaInst *, int32_t> > current_loop_update;
 
     protected:
         std::pair<llvm::AllocaInst *, DataType> find_variable(const std::string &variable_name);

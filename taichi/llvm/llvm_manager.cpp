@@ -233,6 +233,7 @@ void Function::loop_begin(
         >()
     );
     current_blocks.pop();
+    current_blocks.push(if_blcok);
     current_blocks.push(next_block);
     current_blocks.push(body_block);
 
@@ -245,6 +246,10 @@ void Function::loop_begin(
         ),
         loop_index_ptr
     );
+    current_loop_update.push(std::make_pair(
+        loop_index_ptr,
+        s
+    ));
     current_builder->CreateBr(if_blcok);
 
     current_builder->SetInsertPoint(if_blcok);
@@ -267,9 +272,28 @@ void Function::loop_begin(
 
 void Function::loop_finish()
 {
-    // TODO
+    llvm::LoadInst *load = current_builder->CreateLoad(
+        to_llvm_type(DataType::Int32, taichi_context.get()),
+        current_loop_update.top().first
+    );
+    llvm::Value *add_result = current_builder->CreateAdd(
+        load,
+        llvm::ConstantInt::get(
+            to_llvm_type(DataType::Int32, taichi_context.get()),
+            static_cast<uint64_t>(current_loop_update.top().second),
+            true
+        )
+    );
+    current_builder->CreateStore(
+        add_result,
+        current_loop_update.top().first
+    );
+    current_builder->CreateBr(current_blocks.top());
+
     variable_stack.pop_back();
     current_blocks.pop();
+    current_blocks.pop();
+
     current_builder->SetInsertPoint(current_blocks.top());
 }
 
@@ -436,8 +460,40 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer)
 {
     Byte *result_buffer = new Byte[type_size(return_type)];
 
-    // TODO
+    uint32_t offset = 0;
+    uint32_t cache_32 = 0;
+    uint64_t cache_64 = 0;
     std::vector<llvm::GenericValue> args;
+    for(auto arg : this->argument_list) {
+        args.push_back(llvm::GenericValue());
+        switch(arg.type) {
+            case DataType::Int32:
+                memcpy(&cache_32, argument_buffer + offset, 4);
+                args.back().IntVal = llvm::APInt(
+                    32,
+                    static_cast<uint64_t>(cache_32),
+                    true
+                );
+                break;
+            case DataType::Int64:
+                memcpy(&cache_64, argument_buffer + offset, 8);
+                args.back().IntVal = llvm::APInt(
+                    64,
+                    cache_64,
+                    true
+                );
+                break;
+            case DataType::Float32:
+                memcpy(&cache_32, argument_buffer + offset, 4);
+                args.back().FloatVal = reinterpret_cast<float&>(cache_32);
+                break;
+            case DataType::Float64:
+                memcpy(&cache_64, argument_buffer + offset, 8);
+                args.back().DoubleVal = reinterpret_cast<double&>(cache_64);
+                break;
+        }
+        offset += type_size(arg.type);
+    }
     llvm::ArrayRef<llvm::GenericValue> args_array(args);
 
     if(this->llvm_function) {
