@@ -216,6 +216,14 @@ def convert_func_to_pure_calc_task(
 
     return result_func
 
+def get_func_prototype(func: ast.FunctionDef):
+    args = func.args
+    args_type_list = []
+    for arg in args.args:
+        args_type_list.append(arg.annotation.attr)
+    return_type = func.returns.attr
+    return args_type_list, return_type
+
 def _value_node_to_bytes(node) -> bytes:
     if isinstance(node, ast.Constant):
         source_value = node.value

@@ -8,6 +8,7 @@ std::unique_ptr<LLVMUnit> taichi_llvm_unit;
 
 void init()
 {
+    Out::Log(pType::MESSAGE, "initing llvm lib...");
     taichi_llvm_unit = std::make_unique<LLVMUnit>();
 
     llvm::InitializeNativeTarget();
@@ -20,13 +21,37 @@ void init()
     std::string Error;
     llvm::ExecutionEngine *Engine = llvm::EngineBuilder(std::move(init_module))
         .setErrorStr(&Error)
-        .setOptLevel(llvm::CodeGenOptLevel::Aggressive)
+        .setOptLevel(llvm::CodeGenOptLevel::None)
         .create();
     if(!Engine || Error.length()) {
         Out::Log(pType::ERROR, Error.c_str());
     }
     
     taichi_llvm_unit->engine = Engine;
+    taichi_llvm_unit->engine->finalizeObject();
+    Out::Log(pType::MESSAGE, "init lib complated");
+
+    // test
+    {
+        auto Module = std::make_unique<llvm::Module>("simple_module", *taichi_llvm_unit->context);
+        llvm::IRBuilder<> Builder(*taichi_llvm_unit->context);
+
+        // 创建函数签名：int add(int, int)
+        llvm::Type *Int32Type = llvm::Type::getInt32Ty(*taichi_llvm_unit->context);
+        llvm::FunctionType *FuncType = llvm::FunctionType::get(Int32Type, {Int32Type, Int32Type}, false);
+        llvm::Function *AddFunc = llvm::Function::Create(FuncType, llvm::Function::ExternalLinkage, "test_add", *Module);
+
+        // 定义函数体
+        llvm::BasicBlock *BB = llvm::BasicBlock::Create(*taichi_llvm_unit->context, "entry", AddFunc);
+        Builder.SetInsertPoint(BB);
+        llvm::Argument *Arg1 = AddFunc->getArg(0);
+        llvm::Argument *Arg2 = AddFunc->getArg(1);
+        llvm::Value *Sum = Builder.CreateAdd(Arg1, Arg2, "sum");
+        Builder.CreateRet(Sum);
+
+        taichi_llvm_unit->engine->addModule(std::move(Module));
+    }
+    // test
 }
 
 DataType OperationValue::get_data_type(
@@ -204,7 +229,17 @@ void Function::build_begin(
 
 void Function::build_finish()
 {
+    if (llvm::verifyFunction(*llvm_function)) {
+        Out::Log(pType::ERROR, "verifyFunction");
+    }
+
+    current_module->print(llvm::outs(), nullptr);
+
     taichi_llvm_unit->engine->addModule(std::move(current_module));
+
+    // taichi_llvm_unit->engine->finalizeObject();
+
+    // Out::Log(pType::ERROR, "finalizeObject");
 }
 
 void Function::loop_begin(
@@ -460,9 +495,9 @@ void Function::return_statement(const std::string &return_variable_name)
     }
 }
 
-std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer)
+std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer)
 {
-    Byte *result_buffer = new Byte[type_size(return_type)];
+    Byte *local_result_buffer = new Byte[type_size(return_type)];
 
     uint32_t offset = 0;
     uint32_t cache_32 = 0;
@@ -508,10 +543,11 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer)
 
         uint64_t result_value = result.IntVal.getZExtValue();
         Byte *src_buffer = (Byte *)&result_value;
-        memcpy(result_buffer, src_buffer, type_size(return_type)); // CHECK
+        memcpy(local_result_buffer, src_buffer, type_size(return_type)); // CHECK
+        memcpy(result_buffer, src_buffer, type_size(return_type));
     }
 
-    return std::shared_ptr<Byte[]>(result_buffer, std::default_delete<Byte[]>());
+    return std::shared_ptr<Byte[]>(local_result_buffer, std::default_delete<Byte[]>());
 }
 
 }

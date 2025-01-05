@@ -43,5 +43,13 @@ extern "C" void return_statement(
     uint8_t *function_name,
     uint8_t *return_variable_name
 );
+extern "C" void run(
+    uint8_t *function_name,
+    uint8_t *argument_buffer,
+    uint8_t *result_buffer
+);
+extern "C" void *get_func_ptr(
+    uint8_t *function_name
+);
 
 #endif

@@ -1,4 +1,5 @@
 # 类型定义
+import struct
 
 __all__ = [
     "Int32",
@@ -45,3 +46,23 @@ type_id = {
     Float32.__name__: 3,
     Float64.__name__: 4
 }
+
+def to_bytes(value, type: str) -> bytes:
+    if type == Int32.__name__:
+        return int(value).to_bytes(4, byteorder="big", signed=True)
+    elif type == Int64.__name__:
+        return int(value).to_bytes(8, byteorder="big", signed=True)
+    elif type == Float32.__name__:
+        return struct.pack("f", value)
+    elif type == Float64.__name__:
+        return struct.pack("d", value)
+    
+def from_bytes(bytes: bytes, type: str):
+    if type == Int32.__name__:
+        return int.from_bytes(bytes, byteorder="big", signed=True)
+    elif type == Int64.__name__:
+        return int.from_bytes(bytes, byteorder="big", signed=True)
+    elif type == Float32.__name__:
+        return struct.unpack("f", bytes)
+    elif type == Float64.__name__:
+        return struct.unpack("d", bytes)

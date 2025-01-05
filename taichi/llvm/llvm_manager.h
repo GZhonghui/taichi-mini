@@ -13,6 +13,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
@@ -275,6 +276,11 @@ namespace llvm_taichi
         llvm::AllocaInst *alloc_variable(const std::string &name, DataType type, bool force_local = false);
 
     public:
+        inline llvm::Function *get_raw_ptr() {
+            return llvm_function;
+        }
+
+    public:
         void build_begin(
             const std::string &function_name,
             const std::vector<Argument> &argument_list,
@@ -299,7 +305,7 @@ namespace llvm_taichi
             const OperationValue &right_value
         );
         void return_statement(const std::string &return_variable_name);
-        std::shared_ptr<Byte[]> run(Byte *argument_buffer);
+        std::shared_ptr<Byte[]> run(Byte *argument_buffer, Byte *result_buffer);
 
     public:
         Function() = default;

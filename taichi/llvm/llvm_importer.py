@@ -1,6 +1,6 @@
 import os
 import ctypes
-from ctypes import POINTER, c_uint8, c_int32
+from ctypes import POINTER, c_uint8, c_int32, c_void_p
 
 __all__ = [
     "c_function_begin",
@@ -9,7 +9,9 @@ __all__ = [
     "c_loop_finish",
     "c_assignment_statement_value",
     "c_assignment_statement_operation",
-    "c_return_statement"
+    "c_return_statement",
+    "c_run",
+    "c_get_func_ptr"
 ]
 
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -77,3 +79,17 @@ c_return_statement.argtypes = (
     POINTER(c_uint8) # return_variable_name
 )
 c_return_statement.restype = None
+
+c_run = lib_llvm_taichi.run
+c_run.argtypes = (
+    POINTER(c_uint8), # function_name
+    POINTER(c_uint8), # argument_buffer
+    POINTER(c_uint8) # result_buffer
+)
+c_run.restype = None
+
+c_get_func_ptr = lib_llvm_taichi.get_func_ptr
+c_get_func_ptr.argtypes = (
+    POINTER(c_uint8), # function_name
+)
+c_get_func_ptr.restype = c_void_p
