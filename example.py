@@ -26,6 +26,11 @@ def calc_no(n, data, offset = 3):
     for i in range(n):
         data[i] = calc(i, offset)
 
+@ti.func
+def add(x: ti.Int32, y: ti.Int32) -> ti.Int32:
+    res = x + y
+    return res
+
 def main():
     N = int(4e2)
     data1, data2 = [0] * N, [0] * N

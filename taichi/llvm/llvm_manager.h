@@ -213,6 +213,29 @@ namespace llvm_taichi
         std::string variable_name;
         DataType constant_value_type;
         Byte constant_value[8];
+
+    public:
+        inline void set_variable(const std::string &name) {
+            operation_value_type = OperationValueType::Variable;
+            variable_name = name;
+        }
+
+        inline void set_constant(DataType type, Byte *source_buffer) {
+            operation_value_type = OperationValueType::Constant;
+            constant_value_type = type;
+            memcpy(constant_value, source_buffer, type_size(type));
+        }
+
+        inline void from_buffer(Byte *buffer) {
+            if(*buffer) {
+                set_constant(
+                    (DataType)buffer[1],
+                    buffer + 2
+                );
+            } else {
+                set_variable(std::string((char *)(buffer + 2)));
+            }
+        }
     
     public:
         DataType get_data_type(

@@ -81,3 +81,88 @@ void function_finish(
         this_func->build_finish();
     }
 }
+
+extern "C" void loop_begin(
+    uint8_t *function_name,
+    uint8_t *loop_index_name,
+    int32_t l,
+    int32_t r,
+    int32_t s
+) {
+    std::string function_name_s = std::string((char *)function_name);
+    if(llvm_taichi::taichi_func_table.count(function_name_s)) {
+        auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+        this_func->loop_begin(
+            std::string((char *)loop_index_name),
+            l,
+            r,
+            s
+        );
+    }
+}
+
+extern "C" void loop_finish(
+    uint8_t *function_name
+) {
+    std::string function_name_s = std::string((char *)function_name);
+    if(llvm_taichi::taichi_func_table.count(function_name_s)) {
+        auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+        this_func->loop_finish();
+    }
+}
+
+void assignment_statement_value(
+    uint8_t *function_name,
+    uint8_t *target_variable_name,
+    uint8_t *source_buffer
+) {
+    std::string function_name_s = std::string((char *)function_name);
+    if(!llvm_taichi::taichi_func_table.count(function_name_s)) {
+        return;
+    }
+
+    auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+
+    llvm_taichi::OperationValue value;
+    value.from_buffer(source_buffer);
+    this_func->assignment_statement(
+        std::string((char *)target_variable_name),
+        value
+    );
+}
+
+void assignment_statement_operation(
+    uint8_t *function_name,
+    uint8_t *target_variable_name,
+    uint8_t *left_buffer,
+    uint8_t operation_type,
+    uint8_t *right_buffer
+) {
+    std::string function_name_s = std::string((char *)function_name);
+    if(!llvm_taichi::taichi_func_table.count(function_name_s)) {
+        return;
+    }
+
+    auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+
+    llvm_taichi::OperationValue left, right;
+    left.from_buffer(left_buffer);
+    right.from_buffer(right_buffer);
+    this_func->assignment_statement(
+        std::string((char *)target_variable_name),
+        left,
+        (llvm_taichi::OperationType)operation_type,
+        right
+    );
+}
+
+void return_statement(
+    uint8_t *function_name,
+    uint8_t *return_variable_name
+) {
+    std::string function_name_s = std::string((char *)function_name);
+    if(llvm_taichi::taichi_func_table.count(function_name_s)) {
+        auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+        this_func->return_statement(std::string((char *)return_variable_name));
+    }
+}

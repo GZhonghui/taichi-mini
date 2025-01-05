@@ -1,9 +1,10 @@
 import os
 import ast
-import ctypes
+import struct
 import taichi.type
 import taichi.llvm
-from ctypes import POINTER, c_uint8, c_uint32, c_uint64
+import taichi.lang.operation
+from ctypes import POINTER, c_uint8, c_int32
 from taichi.lang.numba import ReplaceTopRangeToPrange
 from taichi.tool import *
 
@@ -130,6 +131,8 @@ def _body_filter(target: list, source: list, depth: int = 0):
                 continue
             if isinstance(stmt.value, ast.Constant):
                 target.append(stmt)
+            if isinstance(stmt.value, ast.Name):
+                target.append(stmt)
             elif (
                 isinstance(stmt.value, ast.BinOp)
                 and (
@@ -213,6 +216,83 @@ def convert_func_to_pure_calc_task(
 
     return result_func
 
+def _value_node_to_bytes(node) -> bytes:
+    if isinstance(node, ast.Constant):
+        source_value = node.value
+        if isinstance(source_value, int):
+            buffer = [
+                int(1).to_bytes(1, byteorder="big", signed=False),
+                int(taichi.type.type_id[taichi.type.Int32.__name__]).to_bytes(
+                    1, byteorder="big", signed=False
+                ),
+                source_value.to_bytes(4, byteorder="big", signed=True)
+            ]
+        elif isinstance(source_value, float):
+            buffer = [
+                int(1).to_bytes(1, byteorder="big", signed=False),
+                int(taichi.type.type_id[taichi.type.Float32.__name__]).to_bytes(
+                    1, byteorder="big", signed=False
+                ),
+                struct.pack("f", source_value)
+            ]
+    elif isinstance(node, ast.Name):
+        buffer = [
+            int(0).to_bytes(1, byteorder="big", signed=False),
+            int(0).to_bytes(1, byteorder="big", signed=False),
+            node.id.encode(encoding="ascii")
+        ]
+    buffer_b = b"".join(buffer)
+    return buffer_b
+
+def _build_body(func_name_b: bytes, body: list):
+    for stmt in body:
+        if isinstance(stmt, ast.For):
+            loop_index_name_b = stmt.target.id.encode(encoding="ascii")
+            iter_args = stmt.iter.args
+            if len(iter_args) == 1:
+                loop_range = [0, iter_args[0].value, 1]
+            elif len(iter_args) == 2:
+                loop_range = [iter_args[0].value, iter_args[1].value, 1]
+            elif len(iter_args) == 3:
+                loop_range = [i.value for i in iter_args]
+            taichi.llvm.c_loop_begin(
+                BP(func_name_b),
+                BP(loop_index_name_b),
+                c_int32(loop_range[0]),
+                c_int32(loop_range[1]),
+                c_int32(loop_range[2])
+            )
+            _build_body(func_name_b, stmt.body)
+            taichi.llvm.c_loop_finish(BP(func_name_b))
+        elif isinstance(stmt, ast.Assign):
+            target_name_b = stmt.targets[0].id.encode(encoding="ascii")
+            if (
+                isinstance(stmt.value, ast.Constant)
+                or isinstance(stmt.value, ast.Name)
+            ):
+                buffer_b = _value_node_to_bytes(stmt.value)
+                taichi.llvm.c_assignment_statement_value(
+                    BP(func_name_b),
+                    BP(target_name_b),
+                    BP(buffer_b)
+                )
+            elif isinstance(stmt.value, ast.BinOp):
+                left_b = _value_node_to_bytes(stmt.value.left)
+                right_b = _value_node_to_bytes(stmt.value.right)
+                taichi.llvm.c_assignment_statement_operation(
+                    BP(func_name_b),
+                    BP(target_name_b),
+                    BP(left_b),
+                    c_uint8(taichi.lang.operation.ast_operation_id(stmt.value.op)),
+                    BP(right_b)
+                )
+        elif isinstance(stmt, ast.Return):
+            return_name_b = stmt.value.id.encode(encoding="ascii")
+            taichi.llvm.c_return_statement(
+                BP(func_name_b),
+                BP(return_name_b)
+            )
+
 def build_llvm_func(func: ast.FunctionDef):
     function_name_b = func.name.encode(encoding="ascii")
 
@@ -234,6 +314,8 @@ def build_llvm_func(func: ast.FunctionDef):
         BP(args_name_b),
         c_uint8(taichi.type.type_id[func.returns.attr])
     )
+
+    _build_body(function_name_b, func.body)
 
     taichi.llvm.c_function_finish(
         BP(function_name_b)
