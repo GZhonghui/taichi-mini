@@ -6,6 +6,7 @@ import taichi as ti
 def calc(i: ti.Int32, offset: ti.Int64) -> ti.Int64:
     res = 0
     for j in range(100):
+        res = res - 1
         for k in range(0, 200, 2):
             s = j + k
             x = s + i

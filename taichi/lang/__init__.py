@@ -2,6 +2,7 @@ import os
 import ast
 from taichi.lang.numba import ReplaceTopRangeToPrange
 from taichi.tool import *
+import taichi.type
 
 # 本模块的内容用于处理 AST
 
@@ -113,7 +114,98 @@ def convert_kernel_main_loop_to_func(
 
     return result_func
 
+def _body_filter(target: list, source: list, depth: int = 0):
+    for stmt in source:
+        if isinstance(stmt, ast.Assign):
+            if (
+                len(stmt.targets) != 1
+                or not isinstance(stmt.targets[0], ast.Name)
+            ):
+                log_warning(
+                    f"ignore this assign for multi targets{os.linesep}{ast.unparse(stmt)}"
+                )
+                continue
+            if isinstance(stmt.value, ast.Constant):
+                target.append(stmt)
+            elif (
+                isinstance(stmt.value, ast.BinOp)
+                and (
+                    isinstance(stmt.value.left, ast.Name)
+                    or isinstance(stmt.value.left, ast.Constant)
+                )
+                and (
+                    isinstance(stmt.value.right, ast.Name)
+                    or isinstance(stmt.value.right, ast.Constant)
+                )
+                and (
+                    isinstance(stmt.value.op, ast.Add)
+                    or isinstance(stmt.value.op, ast.Sub)
+                    or isinstance(stmt.value.op, ast.Mult)
+                    or isinstance(stmt.value.op, ast.Div)
+                )
+            ):
+                target.append(stmt)
+        elif isinstance(stmt, ast.For):
+            if (
+                isinstance(stmt.iter, ast.Call)
+                and isinstance(stmt.iter.func, ast.Name)
+                and stmt.iter.func.id == "range"
+                and sum([
+                    0
+                    if isinstance(arg, ast.Constant)
+                    else
+                    1
+                    for arg in stmt.iter.args
+                ]) == 0
+            ):
+                for_body = []
+                _body_filter(for_body, stmt.body, depth = depth + 1)
+                target.append(ast.For(
+                    target=stmt.target,
+                    iter=stmt.iter,
+                    body=for_body,
+                    orelse=[]
+                ))
+        elif depth == 0 and isinstance(stmt, ast.Return):
+            if isinstance(stmt.value, ast.Name):
+                target.append(stmt)
+                break
+
 def convert_func_to_pure_calc_task(
     func: ast.FunctionDef
 ) -> ast.FunctionDef:
-    ...
+    args = func.args
+    args_list = []
+    for arg in args.args:
+        if (
+            isinstance(arg.annotation, ast.Attribute)
+            and arg.annotation.attr in taichi.type.basic_types
+        ):
+            args_list.append(arg)
+    args.args = args_list
+    args.kw_defaults = []
+    args.defaults = []
+
+    if (
+        isinstance(func.returns, ast.Attribute)
+        and func.returns.attr in taichi.type.basic_types
+    ):
+        returns = func.returns
+    else:
+        log_error(f"func {func.name} needs return taichi basic type")
+        return None
+
+    body = []
+    _body_filter(body, func.body)
+    
+    result_func = ast.FunctionDef(
+        name=func.name,
+        args=args,
+        body=body,
+        decorator_list=[],
+        returns=returns
+    )
+
+    ast.fix_missing_locations(result_func)
+
+    return result_func

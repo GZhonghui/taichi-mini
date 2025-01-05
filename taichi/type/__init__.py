@@ -30,3 +30,10 @@ class Float64(BaseType):
     def __init__(self):
         super().__init__()
         self._type = "Float64"
+
+basic_types = [
+    Int32.__name__,
+    Int64.__name__,
+    Float32.__name__,
+    Float64.__name__
+]

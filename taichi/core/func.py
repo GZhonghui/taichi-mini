@@ -1,3 +1,4 @@
+import os
 import ast
 import inspect
 
@@ -14,6 +15,15 @@ def func(f):
         if isinstance(node, ast.FunctionDef) and node.name == f.__name__:
             node.decorator_list = []
             pure_calc_task = taichi.lang.convert_func_to_pure_calc_task(node)
+    if pure_calc_task:
+        log_message(
+            f"func {f.__name__} compile result{os.linesep}"
+            f"{'=' * 40}{os.linesep}"
+            f"{ast.unparse(pure_calc_task)}{os.linesep}"
+            f"{'=' * 40}"
+        )
+    else:
+        log_error(f"func {f.__name__} compile failed")
 
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
