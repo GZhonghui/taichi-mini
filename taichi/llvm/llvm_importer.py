@@ -27,5 +27,7 @@ c_function_begin.argtypes = (
 c_function_begin.restype = None
 
 c_function_finish = lib_llvm_taichi.function_finish
-c_function_finish.argtypes = ()
+c_function_finish.argtypes = (
+    POINTER(c_uint8), # function_name
+)
 c_function_finish.restype = None

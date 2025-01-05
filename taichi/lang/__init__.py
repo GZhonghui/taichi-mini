@@ -3,6 +3,7 @@ import ast
 import ctypes
 import taichi.type
 import taichi.llvm
+from ctypes import POINTER, c_uint8, c_uint32, c_uint64
 from taichi.lang.numba import ReplaceTopRangeToPrange
 from taichi.tool import *
 
@@ -213,14 +214,27 @@ def convert_func_to_pure_calc_task(
     return result_func
 
 def build_llvm_func(func: ast.FunctionDef):
+    function_name_b = func.name.encode(encoding="ascii")
+
     args = func.args
-    returns = func.returns
-    
-    # function_name_b = func.name.encode(encoding="ascii")
-    # taichi.llvm.c_function_begin(
-    #     BP(function_name_b),
-    #     0,
-    #     BP(function_name_b),
-    #     BP(function_name_b),
-    #     0
-    # )
+    args_number = len(args.args)
+    args_type = list()
+    args_name = str()
+    for arg in args.args:
+        args_type.append(taichi.type.type_id[arg.annotation.attr].to_bytes(
+            1, byteorder="big", signed=False
+        ))
+        args_name += arg.arg + ","
+    args_type_b = b"".join(args_type)
+    args_name_b = args_name.encode(encoding="ascii")
+    taichi.llvm.c_function_begin(
+        BP(function_name_b),
+        c_uint8(args_number),
+        BP(args_type_b),
+        BP(args_name_b),
+        c_uint8(taichi.type.type_id[func.returns.attr])
+    )
+
+    taichi.llvm.c_function_finish(
+        BP(function_name_b)
+    )

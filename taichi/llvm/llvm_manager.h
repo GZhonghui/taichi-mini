@@ -35,6 +35,21 @@ namespace llvm_taichi
         Float64 = 4
     };
 
+    inline const char *DataTypeStr(DataType type) {
+        switch(type) {
+            case DataType::Int32:
+                return "Int32";
+            case DataType::Int64:
+                return "Int64";
+            case DataType::Float32:
+                return "Float32";
+            case DataType::Float64:
+                return "Float64";
+            default:
+                return "taichi_default_data_type";
+        }
+    }
+
     enum OperationType {
         Add = 1,
         Sub = 2,

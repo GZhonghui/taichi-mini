@@ -14,6 +14,8 @@ extern "C" void function_begin(
     uint8_t *args_name,
     uint8_t return_type
 );
-extern "C" void function_finish();
+extern "C" void function_finish(
+    uint8_t *function_name
+);
 
 #endif

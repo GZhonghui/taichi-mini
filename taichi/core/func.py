@@ -18,7 +18,7 @@ def func(f):
             pure_calc_task = taichi.lang.convert_func_to_pure_calc_task(node)
     if pure_calc_task:
         log_message(
-            f"func {f.__name__} compile result{os.linesep}"
+            f"analyze results of function {f.__name__}{os.linesep}"
             f"{'=' * 40}{os.linesep}"
             f"{ast.unparse(pure_calc_task)}{os.linesep}"
             f"{'=' * 40}"
