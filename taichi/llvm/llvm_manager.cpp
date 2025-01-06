@@ -29,20 +29,31 @@ void init()
     
     taichi_llvm_unit->engine = Engine;
     taichi_llvm_unit->engine->finalizeObject();
-    Out::Log(pType::MESSAGE, "init lib complated");
+    Out::Log(pType::MESSAGE, "llvm lib init complated");
 
-    // test
+    // DEBUG
     {
-        auto Module = std::make_unique<llvm::Module>("simple_module", *taichi_llvm_unit->context);
-        llvm::IRBuilder<> Builder(*taichi_llvm_unit->context);
+        auto Module = std::make_unique<llvm::Module>("debug_module", *(taichi_llvm_unit->context));
+        llvm::IRBuilder<> Builder(*(taichi_llvm_unit->context));
 
-        // 创建函数签名：int add(int, int)
-        llvm::Type *Int32Type = llvm::Type::getInt32Ty(*taichi_llvm_unit->context);
-        llvm::FunctionType *FuncType = llvm::FunctionType::get(Int32Type, {Int32Type, Int32Type}, false);
-        llvm::Function *AddFunc = llvm::Function::Create(FuncType, llvm::Function::ExternalLinkage, "test_add", *Module);
+        llvm::Type *Int32Type = llvm::Type::getInt32Ty(*(taichi_llvm_unit->context));
+        llvm::FunctionType *FuncType = llvm::FunctionType::get(
+            Int32Type,
+            {Int32Type, Int32Type},
+            false
+        );
+        llvm::Function *AddFunc = llvm::Function::Create(
+            FuncType,
+            llvm::Function::ExternalLinkage,
+            "debug_add",
+            *Module
+        );
 
-        // 定义函数体
-        llvm::BasicBlock *BB = llvm::BasicBlock::Create(*taichi_llvm_unit->context, "entry", AddFunc);
+        llvm::BasicBlock *BB = llvm::BasicBlock::Create(
+            *(taichi_llvm_unit->context),
+            "entry",
+            AddFunc
+        );
         Builder.SetInsertPoint(BB);
         llvm::Argument *Arg1 = AddFunc->getArg(0);
         llvm::Argument *Arg2 = AddFunc->getArg(1);
@@ -50,8 +61,10 @@ void init()
         Builder.CreateRet(Sum);
 
         taichi_llvm_unit->engine->addModule(std::move(Module));
+        taichi_llvm_unit->engine->finalizeObject();
+        Out::Log(pType::MESSAGE, "debug_add attached");
     }
-    // test
+    // DEBUG
 }
 
 DataType OperationValue::get_data_type(
@@ -230,16 +243,15 @@ void Function::build_begin(
 void Function::build_finish()
 {
     if (llvm::verifyFunction(*llvm_function)) {
-        Out::Log(pType::ERROR, "verifyFunction");
+        Out::Log(pType::ERROR, "verify function failed");
     }
-
     current_module->print(llvm::outs(), nullptr);
 
     taichi_llvm_unit->engine->addModule(std::move(current_module));
 
-    // taichi_llvm_unit->engine->finalizeObject();
+    taichi_llvm_unit->engine->finalizeObject();
 
-    // Out::Log(pType::ERROR, "finalizeObject");
+    Out::Log(pType::MESSAGE, "function has been added to engine");
 }
 
 void Function::loop_begin(
@@ -272,8 +284,8 @@ void Function::loop_begin(
         >()
     );
     current_blocks.pop();
-    current_blocks.push(if_blcok);
     current_blocks.push(next_block);
+    current_blocks.push(if_blcok);
     current_blocks.push(body_block);
 
     auto loop_index_ptr = alloc_variable(loop_index_name, DataType::Int32, true);
@@ -327,12 +339,13 @@ void Function::loop_finish()
         add_result,
         current_loop_update.top().first
     );
-    current_builder->CreateBr(current_blocks.top());
+    current_blocks.pop();
+    current_builder->CreateBr(current_blocks.top()); // if
+    current_blocks.pop();
 
     variable_stack.pop_back();
-    current_blocks.pop();
-    current_blocks.pop();
-
+    current_loop_update.pop();
+    
     current_builder->SetInsertPoint(current_blocks.top());
 }
 

@@ -1,4 +1,5 @@
 # 类型定义
+import ctypes
 import struct
 
 __all__ = [
@@ -46,6 +47,25 @@ type_id = {
     Float32.__name__: 3,
     Float64.__name__: 4
 }
+
+type_to_ctypes = {
+    Int32.__name__: ctypes.c_int32,
+    Int64.__name__: ctypes.c_int64,
+    Float32.__name__: ctypes.c_float,
+    Float64.__name__: ctypes.c_double
+}
+
+def cast(value, type: str):
+    if (
+        type == Int32.__name__
+        or type == Int64.__name__
+    ):
+        return int(value)
+    elif (
+        type == Float32.__name__
+        or type == Float64.__name__
+    ):
+        return float(value)
 
 def to_bytes(value, type: str) -> bytes:
     if type == Int32.__name__:

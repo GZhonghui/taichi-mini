@@ -243,6 +243,8 @@ def _value_node_to_bytes(node) -> bytes:
                 ),
                 struct.pack("f", source_value)
             ]
+        else:
+            log_error(source_value, "is not a acceptable constant")
     elif isinstance(node, ast.Name):
         buffer = [
             int(0).to_bytes(1, byteorder="big", signed=False),

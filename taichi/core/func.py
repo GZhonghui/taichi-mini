@@ -6,8 +6,8 @@ from ctypes import c_void_p, c_int32, CFUNCTYPE
 from taichi.tool import *
 import taichi.lang
 import taichi.llvm
-import taichi.core.func_manager
 import taichi.type
+import taichi.core.func_manager
 
 # 模仿 taichi 的 func 修饰器
 def func(f):
@@ -34,30 +34,24 @@ def func(f):
         function_name_b = function_name.encode(encoding="ascii")
 
         function_ptr = taichi.llvm.c_get_func_ptr(BP(function_name_b))
-        
-        # test
-        temp_name = "test_add"
-        temp_name_b = temp_name.encode(encoding="ascii")
-        temp_ptr = taichi.llvm.c_get_func_ptr(BP(temp_name_b))
-        CFUNCTYPE_Add = CFUNCTYPE(c_int32, c_int32, c_int32)
-        add_func = CFUNCTYPE_Add(temp_ptr)
-        print(add_func(1,1))
+        function_prototype = [
+            taichi.type.type_to_ctypes[i]
+            for i in [return_type, *args_type]
+        ]
+
+        _CFUNCTYPE = CFUNCTYPE(*function_prototype)
+        self_func = _CFUNCTYPE(function_ptr)
 
         def wrapper(*args, **kwargs):
-            # return add_func(c_int32(args[0]), c_int32(args[1]))
-            args_bytes_list = list()
+            cast_args = []
             for i in range(len(args_type)):
-                args_bytes_list.append(
-                    taichi.type.to_bytes(args[i], args_type[i])
+                cast_args.append(
+                    taichi.type.type_to_ctypes[args_type[i]](
+                        taichi.type.cast(args[i], args_type[i])
+                    )
                 )
-            args_b = b"".join(args_bytes_list)
-            result_b = taichi.type.to_bytes(0, return_type)
-            # taichi.llvm.c_run(
-            #     BP(function_name_b),
-            #     BP(args_b),
-            #     BP(result_b)
-            # )
-            return taichi.type.from_bytes(result_b, return_type)
+            result = self_func(*cast_args)
+            return taichi.type.type_to_ctypes[return_type](result).value
 
     else:
         log_error(f"func {f.__name__} compile failed")

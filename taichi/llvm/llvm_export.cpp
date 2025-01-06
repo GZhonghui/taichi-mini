@@ -188,13 +188,15 @@ void *get_func_ptr(
 
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
-        return (void *)this_func->get_raw_ptr();
+        auto llvm_func_ptr = this_func->get_raw_ptr();
+        if(llvm_func_ptr) {
+            return llvm_taichi::taichi_llvm_unit->engine->getPointerToFunction(llvm_func_ptr);
+        }
     }
 
-    // test
-    auto p = llvm_taichi::taichi_llvm_unit->engine->FindFunctionNamed(function_name_s);
-    if(p) {
-        return (void *)p;
+    auto llvm_func_ptr = llvm_taichi::taichi_llvm_unit->engine->FindFunctionNamed(function_name_s);
+    if(llvm_func_ptr) {
+        return llvm_taichi::taichi_llvm_unit->engine->getPointerToFunction(llvm_func_ptr);
     }
 
     std::string _m = "can not find address of function " + function_name_s;
