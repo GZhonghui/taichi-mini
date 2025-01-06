@@ -323,7 +323,7 @@ namespace llvm_taichi
         }
 
         inline ~LLVMUnit() {
-            Out::Log(pType::MESSAGE, "ready to detroy llvm unit");
+            Out::Log(pType::DEBUG, "ready to detroy llvm unit");
             if(engine) { // must destroy before context
                 // delete engine;
                 // engine = nullptr;

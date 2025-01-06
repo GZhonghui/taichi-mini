@@ -1,9 +1,12 @@
+#define TOOL_PRINT_H_DATA
 #include "llvm_export.h"
-
-#include <iostream>
 
 void init_lib() {
     llvm_taichi::init();
+}
+
+extern "C" void set_log_level(uint8_t level) {
+    Out::logLevel = (pType)level;
 }
 
 void function_begin(
@@ -49,7 +52,7 @@ void function_begin(
         _m += " " + args_name_v[i];
     }
     _m += std::string(") <=====");
-    Out::Log(pType::MESSAGE, _m.c_str());
+    Out::Log(pType::DEBUG, _m.c_str());
 
     auto this_func = std::make_shared<llvm_taichi::Function>();
     llvm_taichi::taichi_func_table[function_name_s] = this_func;
@@ -74,7 +77,7 @@ void function_finish(
 ) {
     std::string function_name_s = std::string((char *)function_name);
     std::string _m = "function " + function_name_s + " build complated";
-    Out::Log(pType::MESSAGE, _m.c_str());
+    Out::Log(pType::DEBUG, _m.c_str());
 
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];

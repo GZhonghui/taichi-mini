@@ -229,26 +229,26 @@ def _value_node_to_bytes(node) -> bytes:
         source_value = node.value
         if isinstance(source_value, int):
             buffer = [
-                int(1).to_bytes(1, byteorder="big", signed=False),
+                int(1).to_bytes(1, byteorder=cfg_get(cfg.bytes_order), signed=False),
                 int(taichi.type.type_id[taichi.type.Int32.__name__]).to_bytes(
-                    1, byteorder="big", signed=False
+                    1, byteorder=cfg_get(cfg.bytes_order), signed=False
                 ),
-                source_value.to_bytes(4, byteorder="big", signed=True)
+                source_value.to_bytes(4, byteorder=cfg_get(cfg.bytes_order), signed=True)
             ]
         elif isinstance(source_value, float):
             buffer = [
-                int(1).to_bytes(1, byteorder="big", signed=False),
+                int(1).to_bytes(1, byteorder=cfg_get(cfg.bytes_order), signed=False),
                 int(taichi.type.type_id[taichi.type.Float32.__name__]).to_bytes(
-                    1, byteorder="big", signed=False
+                    1, byteorder=cfg_get(cfg.bytes_order), signed=False
                 ),
-                struct.pack("f", source_value)
+                struct.pack(f"{cfg_get(cfg.bytes_order_c)}f", source_value,)
             ]
         else:
             log_error(source_value, "is not a acceptable constant")
     elif isinstance(node, ast.Name):
         buffer = [
-            int(0).to_bytes(1, byteorder="big", signed=False),
-            int(0).to_bytes(1, byteorder="big", signed=False),
+            int(0).to_bytes(1, byteorder=cfg_get(cfg.bytes_order), signed=False),
+            int(0).to_bytes(1, byteorder=cfg_get(cfg.bytes_order), signed=False),
             node.id.encode(encoding="ascii")
         ]
     buffer_b = b"".join(buffer)
@@ -312,7 +312,7 @@ def build_llvm_func(func: ast.FunctionDef):
     args_name = str()
     for arg in args.args:
         args_type.append(taichi.type.type_id[arg.annotation.attr].to_bytes(
-            1, byteorder="big", signed=False
+            1, byteorder=cfg_get(cfg.bytes_order), signed=False
         ))
         args_name += arg.arg + ","
     args_type_b = b"".join(args_type)

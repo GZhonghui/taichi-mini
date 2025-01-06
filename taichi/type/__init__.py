@@ -1,6 +1,7 @@
 # 类型定义
 import ctypes
 import struct
+from taichi.tool import *
 
 __all__ = [
     "Int32",
@@ -69,19 +70,19 @@ def cast(value, type: str):
 
 def to_bytes(value, type: str) -> bytes:
     if type == Int32.__name__:
-        return int(value).to_bytes(4, byteorder="big", signed=True)
+        return int(value).to_bytes(4, byteorder=cfg_get(cfg.bytes_order), signed=True)
     elif type == Int64.__name__:
-        return int(value).to_bytes(8, byteorder="big", signed=True)
+        return int(value).to_bytes(8, byteorder=cfg_get(cfg.bytes_order), signed=True)
     elif type == Float32.__name__:
-        return struct.pack("f", value)
+        return struct.pack(f"{cfg_get(cfg.bytes_order_c)}f", value)
     elif type == Float64.__name__:
-        return struct.pack("d", value)
+        return struct.pack(f"{cfg_get(cfg.bytes_order_c)}d", value)
     
 def from_bytes(bytes: bytes, type: str):
     if type == Int32.__name__:
-        return int.from_bytes(bytes, byteorder="big", signed=True)
+        return int.from_bytes(bytes, byteorder=cfg_get(cfg.bytes_order), signed=True)
     elif type == Int64.__name__:
-        return int.from_bytes(bytes, byteorder="big", signed=True)
+        return int.from_bytes(bytes, byteorder=cfg_get(cfg.bytes_order), signed=True)
     elif type == Float32.__name__:
         return struct.unpack("f", bytes)
     elif type == Float64.__name__:

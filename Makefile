@@ -11,7 +11,6 @@ taichi:
 	$(MAKE) -C taichi
 
 debug:
-	$(CXX) $(LLVM_CXX_FLAGS) $(LLVM_LD_FLAGS) debug.cpp -o debug.out
 
 clean:
 	$(MAKE) -C taichi clean

@@ -19,7 +19,7 @@ def func(f):
             node.decorator_list = []
             pure_calc_task = taichi.lang.convert_func_to_pure_calc_task(node)
     if pure_calc_task:
-        log_message(
+        log_debug(
             f"analyze results of function {f.__name__}{os.linesep}"
             f"{'=' * 40}{os.linesep}"
             f"{ast.unparse(pure_calc_task)}{os.linesep}"
@@ -64,6 +64,8 @@ def func(f):
     # 使用 setattr 为这个函数设定一个属性 标记这个函数是 taichi 的 func
     # 使用 getattr 可以获取属性
     setattr(wrapper, "is_taichi_func", True)
+
+    wrapper.origin = f
 
     # 注册这个函数
     # 使用「文件名」（这里没做完）和「函数名」作为 key 保存这个函数

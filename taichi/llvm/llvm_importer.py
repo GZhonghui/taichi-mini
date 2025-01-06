@@ -3,6 +3,8 @@ import ctypes
 from ctypes import POINTER, c_uint8, c_int32, c_void_p
 
 __all__ = [
+    "c_init_lib",
+    "c_set_log_level",
     "c_function_begin",
     "c_function_finish",
     "c_loop_begin",
@@ -21,7 +23,10 @@ lib_llvm_taichi = ctypes.cdll.LoadLibrary(so_path)
 c_init_lib = lib_llvm_taichi.init_lib
 c_init_lib.argtypes = ()
 c_init_lib.restype = None
-c_init_lib()
+
+c_set_log_level = lib_llvm_taichi.set_log_level
+c_set_log_level.argtypes = (c_uint8,)
+c_set_log_level.restype = None
 
 c_function_begin = lib_llvm_taichi.function_begin
 c_function_begin.argtypes = (

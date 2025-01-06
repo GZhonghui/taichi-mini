@@ -1,4 +1,5 @@
-#pragma once
+#ifndef TOOL_PRINT_H
+#define TOOL_PRINT_H
 
 #include <algorithm>
 #include <cstdint>
@@ -10,7 +11,10 @@ const bool G_ENABLE_OUTPUT = true;
 
 enum class pType
 {
-    MESSAGE, WARNING, ERROR
+    DEBUG = 1,
+    MESSAGE = 2,
+    WARNING = 3,
+    ERROR = 4
 };
 
 class Out
@@ -29,13 +33,20 @@ private:
     }
 
 public:
+    static pType logLevel;
+
+public:
     static void Log(pType Type, const char* Format, ...)
     {
         if (!G_ENABLE_OUTPUT) return;
+        if(Type < logLevel) return;
 
         printTime(); printf(" ");
         switch (Type)
         {
+        case pType::DEBUG:
+            printf("[ DEBUG ]");
+            break;
         case pType::MESSAGE:
             printf("[MESSAGE]");
             break;
@@ -57,3 +68,9 @@ public:
         puts("");
     }
 };
+
+#ifdef TOOL_PRINT_H_DATA
+pType Out::logLevel = pType::DEBUG;
+#endif
+
+#endif

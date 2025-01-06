@@ -7,6 +7,7 @@
 #include "llvm_manager.h"
 
 extern "C" void init_lib();
+extern "C" void set_log_level(uint8_t level);
 extern "C" void function_begin(
     uint8_t *function_name,
     uint8_t args_number,

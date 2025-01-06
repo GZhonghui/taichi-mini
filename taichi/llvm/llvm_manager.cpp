@@ -8,7 +8,7 @@ std::unique_ptr<LLVMUnit> taichi_llvm_unit;
 
 void init()
 {
-    Out::Log(pType::MESSAGE, "initing llvm lib...");
+    Out::Log(pType::DEBUG, "initing llvm lib...");
     taichi_llvm_unit = std::make_unique<LLVMUnit>();
 
     llvm::InitializeNativeTarget();
@@ -29,7 +29,7 @@ void init()
     
     taichi_llvm_unit->engine = Engine;
     taichi_llvm_unit->engine->finalizeObject();
-    Out::Log(pType::MESSAGE, "llvm lib init complated");
+    Out::Log(pType::DEBUG, "llvm lib init complated");
 
     // DEBUG
     {
@@ -62,7 +62,7 @@ void init()
 
         taichi_llvm_unit->engine->addModule(std::move(Module));
         taichi_llvm_unit->engine->finalizeObject();
-        Out::Log(pType::MESSAGE, "debug_add attached");
+        Out::Log(pType::DEBUG, "debug_add attached");
     }
     // DEBUG
 }
@@ -245,13 +245,21 @@ void Function::build_finish()
     if (llvm::verifyFunction(*llvm_function)) {
         Out::Log(pType::ERROR, "verify function failed");
     }
-    current_module->print(llvm::outs(), nullptr);
+
+    std::string func_code;
+    llvm::raw_string_ostream rso(func_code);
+    current_module->print(rso, nullptr);
+    std::string _m = std::string("code of ") + name + " is" + (char)10;
+    _m += std::string(40, '=') + (char)10;
+    _m += func_code;
+    _m += std::string(40, '=');
+    Out::Log(pType::DEBUG, _m.c_str());
 
     taichi_llvm_unit->engine->addModule(std::move(current_module));
 
     taichi_llvm_unit->engine->finalizeObject();
 
-    Out::Log(pType::MESSAGE, "function has been added to engine");
+    Out::Log(pType::DEBUG, "function has been added to engine");
 }
 
 void Function::loop_begin(
