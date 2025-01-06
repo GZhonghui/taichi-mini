@@ -40,7 +40,7 @@ void function_begin(
         args_name += 1;
     }
 
-    _m += std::string("its prototype is") + (char)10;
+    _m += std::string("its prototype is") + (char)10; // 喜欢这种换行的写法 没有反斜杠
     _m += "=====> ";
     _m += llvm_taichi::DataTypeStr((llvm_taichi::DataType)return_type);
     _m += " " + function_name_s + "(";

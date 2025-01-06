@@ -36,6 +36,9 @@ namespace llvm_taichi
         Float64 = 4
     };
 
+    // 从枚举类型转换为字符串 可以参照这种写法
+    // switch 是跳表 执行很快
+    // 字符串也都是常量类型
     inline const char *DataTypeStr(DataType type) {
         switch(type) {
             case DataType::Int32:
@@ -324,13 +327,16 @@ namespace llvm_taichi
 
         inline ~LLVMUnit() {
             Out::Log(pType::DEBUG, "ready to detroy llvm unit");
+            // AI: llvm::ExecutionEngine 内部依赖于 llvm::LLVMContext，因此 LLVMContext 的生命周期必须比 ExecutionEngine 长
             if(engine) { // must destroy before context
                 // delete engine;
                 // engine = nullptr;
-                // TODO
+                // 在这里销毁 engine 会出错
+                // TODO: engine 并不是显式通过 new 创建的，确认这个 engine 真的需要手动销毁吗？
+                // 如果需要销毁的话，engine 需要首先销毁（先于 context）
             }
             if(context) {
-                delete context;
+                delete context; // context 是显式手动创建的
                 context = nullptr;
             }
         }

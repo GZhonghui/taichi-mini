@@ -69,6 +69,10 @@ public:
     }
 };
 
+// C++ 在头文件中定义变量的技巧
+// 尤其是静态成员变量
+// 因为需要占用空间 所以需要在类外单独定义（或者说初始化一下）
+// 最新的 C++ 标准好像也支持直接在类内部初始化了
 #ifdef TOOL_PRINT_H_DATA
 pType Out::logLevel = pType::DEBUG;
 #endif

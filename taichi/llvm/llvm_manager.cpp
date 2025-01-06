@@ -19,7 +19,7 @@ void init()
     auto init_module = std::make_unique<llvm::Module>("TaichiInitModule", *(taichi_llvm_unit->context));
 
     std::string Error;
-    llvm::ExecutionEngine *Engine = llvm::EngineBuilder(std::move(init_module))
+    llvm::ExecutionEngine *Engine = llvm::EngineBuilder(std::move(init_module)) // 转交所有权
         .setErrorStr(&Error)
         .setOptLevel(llvm::CodeGenOptLevel::None)
         .create();
@@ -96,6 +96,11 @@ llvm::Value *OperationValue::construct_llvm_value(
         switch(constant_value_type) {
             case DataType::Int32:
                 memcpy(&cache_32, constant_value, 4);
+                // 构造一个 int 常量
+                // 其实还有别的方式
+                // 1 首先构造一个 llvm::APInt 然后使用 llvm::ConstantInt::get
+                // 2 Builder.getInt32
+                // 这边的数据类型转换、截断规则还要再确认（构造32位的数据，传入的却是64位的数据）
                 res = llvm::ConstantInt::get(
                     to_llvm_type(constant_value_type, context),
                     static_cast<uint64_t>(cache_32),
@@ -246,11 +251,13 @@ void Function::build_finish()
         Out::Log(pType::ERROR, "verify function failed");
     }
 
+    // 将构建的 IR 结果输出到一个 string
+    // 使用 llvm 提供的这个 raw_string_ostream
     std::string func_code;
     llvm::raw_string_ostream rso(func_code);
     current_module->print(rso, nullptr);
     std::string _m = std::string("code of ") + name + " is" + (char)10;
-    _m += std::string(40, '=') + (char)10;
+    _m += std::string(40, '=') + (char)10; // 40 个 '=' 的写法
     _m += func_code;
     _m += std::string(40, '=');
     Out::Log(pType::DEBUG, _m.c_str());
@@ -557,6 +564,11 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer
     llvm::ArrayRef<llvm::GenericValue> args_array(args);
 
     if(this->llvm_function) {
+        // runFunction 不是官方推荐的调用函数的方式
+        // 并且只能传递基本类型的参数
+        // 实践中，调用这个函数会报错，提示不要这样调用
+        // LLVM ERROR: MCJIT::runFunction does not support full-featured argument passing.
+        // Please use ExecutionEngine::getFunctionAddress and cast the result to the desired function pointer type.
         llvm::GenericValue result = taichi_llvm_unit->engine->runFunction(
             this->llvm_function,
             args_array
