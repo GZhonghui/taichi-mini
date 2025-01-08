@@ -5,19 +5,19 @@ ti.init()
 
 @ti.func
 def calc_ti(i: ti.Int64, magic: ti.Int64) -> ti.Int64:
-    res = 0
-    for j in range(100):
-        for k in range(0, 200, 2):
-            a = i + j
+    res = 0 # 常量赋值
+    for j in range(100): # 常数范围的循环
+        for k in range(0, 200, 2): # 循环可以嵌套
+            a = i + j # 简单计算
             b = a + k
             c = b * magic
             res = res + c
-    return res
+    return res # 在最后返回一个变量
 
 # 注意这两个修饰器的顺序 不能反过来
 @ti.log_time
 @ti.kernel
-def task_ti(n, data, magic = 3):
+def task_ti(n, data, magic = 3): # kernel 内部只能包含 loop 结构
     for i in range(n):
         data[i] = calc_ti(i, magic)
 
@@ -33,6 +33,7 @@ def main():
     task_ti(N, data1, magic=5)
     task_no(N, data2, magic=5)
 
+    # 验证结果
     ti.log_message(
         "result check passed"
         if sum([1 if data1[i] == data2[i] else 0 for i in range(N)]) == N

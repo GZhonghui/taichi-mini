@@ -39,6 +39,10 @@ def func(f):
             for i in [return_type, *args_type]
         ]
 
+        # CFUNCTYPE 用于定义函数指针类型
+        # _CFUNCTYPE 是我们创建的一个「函数类型」
+        # function_ptr 是从C拿到的一个函数指针
+        # 将「函数指针」转换为正确的类型之后就可以调用了
         _CFUNCTYPE = CFUNCTYPE(*function_prototype)
         self_func = _CFUNCTYPE(function_ptr)
 

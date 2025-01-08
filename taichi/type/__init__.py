@@ -56,6 +56,7 @@ type_to_ctypes = {
     Float64.__name__: ctypes.c_double
 }
 
+# 把一个 value 转换为对应的类型（其实是 python 的内置类型）
 def cast(value, type: str):
     if (
         type == Int32.__name__

@@ -142,6 +142,8 @@ namespace llvm_taichi
         return res;
     }
 
+    // 类型转换
+    // 每种情况单独处理（因为逻辑确实不同）
     inline llvm::Value *cast(
         DataType from,
         DataType to,
@@ -155,12 +157,12 @@ namespace llvm_taichi
         switch(to) {
             case DataType::Int32:
                 if(from == DataType::Int64) {
-                    res = builder->CreateTrunc(
+                    res = builder->CreateTrunc( // 截断
                         value,
                         target_type
                     );
                 } else if(is_float(from)) {
-                    res = builder->CreateFPToSI(
+                    res = builder->CreateFPToSI( // FP: 浮点数 SI: Signed Int
                         value,
                         target_type
                     );
@@ -168,7 +170,7 @@ namespace llvm_taichi
                 break;
             case DataType::Int64:
                 if(from == DataType::Int32) {
-                    res = builder->CreateSExt(
+                    res = builder->CreateSExt( // 拓展
                         value,
                         target_type
                     );
@@ -194,7 +196,7 @@ namespace llvm_taichi
                 break;
             case DataType::Float64:
                 if(from == DataType::Float32) {
-                    res = builder->CreateFPExt(
+                    res = builder->CreateFPExt( // 浮点数拓展
                         value,
                         target_type
                     );

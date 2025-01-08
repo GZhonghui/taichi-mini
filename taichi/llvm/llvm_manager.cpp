@@ -115,6 +115,7 @@ llvm::Value *OperationValue::construct_llvm_value(
                     true
                 );
                 break;
+            // 创建浮点数常量
             case DataType::Float32:
                 memcpy(&cache_32, constant_value, 4);
                 res = llvm::ConstantFP::get(
@@ -156,6 +157,9 @@ std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::strin
     return std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32);
 }
 
+// llvm::AllocaInst 是 llvm::Value 的子类
+// 想取得 AllocaInst 的数据的话需要 Load
+// AllocaInst 表示的是一个内存地址（即指针）
 llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType type, bool force_local)
 {
     auto res = force_local ? (
@@ -229,7 +233,7 @@ void Function::build_begin(
         "function_entry",
         this->llvm_function
     );
-    this->current_builder->SetInsertPoint(entry_block);
+    this->current_builder->SetInsertPoint(entry_block); // 从这个位置开始构建代码
     this->current_blocks.push(entry_block);
 
     this->variable_stack.push_back(
@@ -238,7 +242,8 @@ void Function::build_begin(
             std::pair<llvm::AllocaInst *, DataType>
         >()
     );
-    llvm::Function::arg_iterator arg_begin = this->llvm_function->arg_begin();
+    llvm::Function::arg_iterator arg_begin = this->llvm_function->arg_begin(); // 获取每个参数
+    // 将每个实参都另外存储一份（这样做不是最佳做法）
     for(auto arg : this->argument_list) {
         auto ptr = alloc_variable(arg.name, arg.type);
         current_builder->CreateStore(arg_begin++, ptr);
@@ -264,6 +269,9 @@ void Function::build_finish()
 
     taichi_llvm_unit->engine->addModule(std::move(current_module));
 
+    // 完成 JIT 编译的最后阶段
+    // 确保编译完成，代码已被完全生成
+    // 因为刚才添加了一个 module 所以现在执行
     taichi_llvm_unit->engine->finalizeObject();
 
     Out::Log(pType::DEBUG, "function has been added to engine");
@@ -276,9 +284,11 @@ void Function::loop_begin(
     int32_t s
 )
 {
+    // 创建循环基本上需要「3个Block」
+    // 循环条件判断（cond）、循环体（body）、和循环后的代码（after）
     llvm::BasicBlock *if_blcok = llvm::BasicBlock::Create(
         *(taichi_llvm_unit->context),
-        "loop_if",
+        "loop_if", // 这些名字不会影响逻辑，只是为了辅助调试（这些名字会在IR中保留）
         this->llvm_function
     );
     llvm::BasicBlock *body_block = llvm::BasicBlock::Create(
@@ -316,7 +326,9 @@ void Function::loop_begin(
         loop_index_ptr,
         s
     ));
-    current_builder->CreateBr(if_blcok);
+    current_builder->CreateBr(if_blcok); // 无条件跳转
+    // 跳转是一种「终结指令」
+    // 每个基本块只能有一个终结指令（如 br、ret 等）（必须在最后吗？应该是的）
 
     current_builder->SetInsertPoint(if_blcok);
     llvm::LoadInst *load_loop_index = current_builder->CreateLoad(
@@ -331,6 +343,7 @@ void Function::loop_begin(
             true
         )
     );
+    // 根据条件跳转
     current_builder->CreateCondBr(compare_result, body_block, next_block);
 
     current_builder->SetInsertPoint(body_block);
@@ -412,6 +425,7 @@ void Function::assignment_statement(
     find_result = find_variable(result_name);
     DataType result_type = find_result.second;
 
+    // 运算之前，必须转换为相同的类型
     llvm::Value *llvm_left_value = cast(
         left_value.get_data_type(this),
         result_type,
@@ -436,11 +450,13 @@ void Function::assignment_statement(
         taichi_llvm_unit->context
     );
 
+    // 数据存储的时候 类型不区分是否有符号
+    // 运算的时候才区分 比如CreateSDiv 是有符号的整数除法
     llvm::Value *llvm_result = nullptr;
     switch(operation_type) {
         case OperationType::Add:
             if(is_int(result_type)) {
-                llvm_result = current_builder->CreateAdd(
+                llvm_result = current_builder->CreateAdd( // 每种运算都有对应的 Create
                     llvm_left_value,
                     llvm_right_value
                 );
@@ -533,6 +549,7 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer
     std::vector<llvm::GenericValue> args;
     for(auto arg : this->argument_list) {
         args.push_back(llvm::GenericValue());
+        // 创建一个 GenericValue
         switch(arg.type) {
             case DataType::Int32:
                 memcpy(&cache_32, argument_buffer + offset, 4);
