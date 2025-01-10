@@ -1,3 +1,5 @@
+# 用于管理 log
+
 import time
 import enum
 
@@ -39,6 +41,7 @@ def log_error(*args, **kwargs):
     if _log_level_id <= _log_level_id_table["error"]:
         log("[ ERROR ] >>", *args, **kwargs)
 
+# 一个装饰器 计算函数的运行时间
 def log_time(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()  # start timing

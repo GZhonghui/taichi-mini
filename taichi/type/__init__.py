@@ -3,6 +3,7 @@ import ctypes
 import struct
 from taichi.tool import *
 
+# 导出内容
 __all__ = [
     "Int32",
     "Int64",
@@ -34,6 +35,7 @@ class Float64(BaseType):
         super().__init__()
         self._type = "Float64"
 
+# 基础类型 可以用作 func 的参数和返回值
 basic_types = [
     Int32.__name__,
     Int64.__name__,

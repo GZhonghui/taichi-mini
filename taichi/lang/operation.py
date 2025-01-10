@@ -1,3 +1,6 @@
+# 定义运算类型
+# 为了描述「表达式」
+
 import ast
 
 __all__ = []
@@ -10,6 +13,7 @@ operation_id = {
     "Div": 4
 }
 
+# 为了 AST 和 taichi 的体系统一
 # sync with cpp
 def ast_operation_id(op) -> int:
     if isinstance(op, ast.Add):

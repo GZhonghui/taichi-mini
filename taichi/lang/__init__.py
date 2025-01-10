@@ -1,3 +1,5 @@
+# 用于解析代码
+
 import os
 import ast
 import struct
@@ -30,6 +32,9 @@ class FunctionCallVisitor(ast.NodeVisitor):
         # 注意要递归调用 遍历子节点
         self.generic_visit(node)
 
+# 一个 kernel 含有一个主要的 loop
+# 传入一个 kernel
+# 将 main-loop 的 body 包装为一个函数返回 用于多线程执行
 def convert_kernel_main_loop_to_func(
         func: ast.FunctionDef
     ) -> ast.FunctionDef:
@@ -49,10 +54,12 @@ def convert_kernel_main_loop_to_func(
                 f"illegal code has been ignored of kernel {func.name}{os.linesep}{ast.unparse(stmt)}"
             )
     
+    # 没找到 main-loop 就返回
     if main_loop is None:
         log_warning(f"kernel {func.name} is empty")
         return None
 
+    # 根据 range 的参数得到循环范围
     if len(main_loop.iter.args) == 1:
         loop_range = [
             ast.Constant(value=0),
@@ -71,6 +78,7 @@ def convert_kernel_main_loop_to_func(
         log_error(f"the args of range loop in kernel {func.name} is illegal")
         return None
 
+    # 拓展两个参数，用于指定线程ID
     args = func.args
     args.args.extend([
         ast.arg(arg="_taichi_thread_id", annotation=None),
@@ -81,6 +89,7 @@ def convert_kernel_main_loop_to_func(
         ast.Constant(value=1)
     ])
 
+    # 创建一个新的 FOR 循环，作为新函数的 body
     body = [ast.For(
         target=ast.Name(id=main_loop.target.id, ctx=ast.Store()),
         iter=ast.Call(
@@ -108,6 +117,7 @@ def convert_kernel_main_loop_to_func(
         orelse=[]
     )]
 
+    # 返回的是新函数
     result_func = ast.FunctionDef(
         name="_taichi_working_thread_func",
         args=args,
@@ -118,8 +128,10 @@ def convert_kernel_main_loop_to_func(
 
     return result_func
 
+# 对语句做筛查，只保留支持的语法
 def _body_filter(target: list, source: list, depth: int = 0):
     for stmt in source:
+        # 接受一部分赋值语句
         if isinstance(stmt, ast.Assign):
             if (
                 len(stmt.targets) != 1
@@ -151,6 +163,7 @@ def _body_filter(target: list, source: list, depth: int = 0):
                 )
             ):
                 target.append(stmt)
+        # 接受一部分 FOR 循环
         elif isinstance(stmt, ast.For):
             if (
                 isinstance(stmt.iter, ast.Call)
@@ -165,6 +178,7 @@ def _body_filter(target: list, source: list, depth: int = 0):
                 ]) == 0
             ):
                 for_body = []
+                # FOR 循环的 body 要递归处理
                 _body_filter(for_body, stmt.body, depth = depth + 1)
                 target.append(ast.For(
                     target=stmt.target,
@@ -172,11 +186,13 @@ def _body_filter(target: list, source: list, depth: int = 0):
                     body=for_body,
                     orelse=[]
                 ))
+        # 接受一部分 return 语句
         elif depth == 0 and isinstance(stmt, ast.Return):
             if isinstance(stmt.value, ast.Name):
                 target.append(stmt)
                 break
 
+# 把一个 ti.func 转换为一个「单纯」的计算任务，也就是把不支持的语法都筛掉
 def convert_func_to_pure_calc_task(
     func: ast.FunctionDef
 ) -> ast.FunctionDef:
@@ -185,13 +201,14 @@ def convert_func_to_pure_calc_task(
     for arg in args.args:
         if (
             isinstance(arg.annotation, ast.Attribute)
-            and arg.annotation.attr in taichi.type.basic_types
+            and arg.annotation.attr in taichi.type.basic_types # 基础类型的参数我们才要
         ):
             args_list.append(arg)
     args.args = args_list
     args.kw_defaults = []
     args.defaults = []
 
+    # 检查返回值类型，必须是一个基础类型才行
     if (
         isinstance(func.returns, ast.Attribute)
         and func.returns.attr in taichi.type.basic_types
@@ -201,9 +218,11 @@ def convert_func_to_pure_calc_task(
         log_error(f"func {func.name} needs return taichi basic type")
         return None
 
+    # 对 body 的语句做筛查
     body = []
     _body_filter(body, func.body)
     
+    # 返回新函数
     result_func = ast.FunctionDef(
         name=func.name,
         args=args,
@@ -212,10 +231,12 @@ def convert_func_to_pure_calc_task(
         returns=returns
     )
 
+    # 自己创建的 AST 一般都需要调用此函数 否则会出错
     ast.fix_missing_locations(result_func)
 
     return result_func
 
+# 获取函数原型，也就是参数列表 和 返回值类型
 def get_func_prototype(func: ast.FunctionDef):
     args = func.args
     args_type_list = []
@@ -224,7 +245,12 @@ def get_func_prototype(func: ast.FunctionDef):
     return_type = func.returns.attr
     return args_type_list, return_type
 
+# 将一个 Value 节点的信息包装为 bytes 方便传递给 C
+# Value 可能是变量，此时字节中包含此变量的 name
+# Value 可能是常量，此时字节中包含的信息是 type 和 value
+# Value 出现在「赋值语句」或者「表达式」中
 def _value_node_to_bytes(node) -> bytes:
+    # 序列化一个常量
     if isinstance(node, ast.Constant):
         source_value = node.value
         if isinstance(source_value, int):
@@ -245,6 +271,7 @@ def _value_node_to_bytes(node) -> bytes:
             ]
         else:
             log_error(source_value, "is not a acceptable constant")
+    # 序列化一个变量
     elif isinstance(node, ast.Name):
         buffer = [
             int(0).to_bytes(1, byteorder=cfg_get(cfg.bytes_order), signed=False),
@@ -254,7 +281,9 @@ def _value_node_to_bytes(node) -> bytes:
     buffer_b = b"".join(buffer)
     return buffer_b
 
+# 在 LLVM 端构建函数体的内容
 def _build_body(func_name_b: bytes, body: list):
+    # 遍历 AST 的内容，调用相对应的 C 接口函数，在 C 端创建对应的语句
     for stmt in body:
         if isinstance(stmt, ast.For):
             loop_index_name_b = stmt.target.id.encode(encoding="ascii")
@@ -265,6 +294,7 @@ def _build_body(func_name_b: bytes, body: list):
                 loop_range = [iter_args[0].value, iter_args[1].value, 1]
             elif len(iter_args) == 3:
                 loop_range = [i.value for i in iter_args]
+            # 创建一个 FOR 循环
             taichi.llvm.c_loop_begin(
                 BP(func_name_b),
                 BP(loop_index_name_b),
@@ -272,7 +302,9 @@ def _build_body(func_name_b: bytes, body: list):
                 c_int32(loop_range[1]),
                 c_int32(loop_range[2])
             )
+            # FOR 循环的 body 要递归处理
             _build_body(func_name_b, stmt.body)
+            # 循环要显式结束
             taichi.llvm.c_loop_finish(BP(func_name_b))
         elif isinstance(stmt, ast.Assign):
             target_name_b = stmt.targets[0].id.encode(encoding="ascii")
@@ -281,6 +313,7 @@ def _build_body(func_name_b: bytes, body: list):
                 or isinstance(stmt.value, ast.Name)
             ):
                 buffer_b = _value_node_to_bytes(stmt.value)
+                # 创建一个赋值语句，右侧是单个项目（常量或变量）
                 taichi.llvm.c_assignment_statement_value(
                     BP(func_name_b),
                     BP(target_name_b),
@@ -289,6 +322,7 @@ def _build_body(func_name_b: bytes, body: list):
             elif isinstance(stmt.value, ast.BinOp):
                 left_b = _value_node_to_bytes(stmt.value.left)
                 right_b = _value_node_to_bytes(stmt.value.right)
+                # 创建一个赋值语句，右侧是表达式
                 taichi.llvm.c_assignment_statement_operation(
                     BP(func_name_b),
                     BP(target_name_b),
@@ -296,6 +330,7 @@ def _build_body(func_name_b: bytes, body: list):
                     c_uint8(taichi.lang.operation.ast_operation_id(stmt.value.op)),
                     BP(right_b)
                 )
+        # 创建一个 return 语句
         elif isinstance(stmt, ast.Return):
             return_name_b = stmt.value.id.encode(encoding="ascii")
             taichi.llvm.c_return_statement(
@@ -303,6 +338,7 @@ def _build_body(func_name_b: bytes, body: list):
                 BP(return_name_b)
             )
 
+# 构造一个 LLVM 函数（使用 C 提供的接口，在 C 端构建）
 def build_llvm_func(func: ast.FunctionDef):
     function_name_b = func.name.encode(encoding="ascii")
 
@@ -317,6 +353,7 @@ def build_llvm_func(func: ast.FunctionDef):
         args_name += arg.arg + ","
     args_type_b = b"".join(args_type)
     args_name_b = args_name.encode(encoding="ascii")
+    # 函数名，参数列表，返回值，提供这些信息以开始一个函数
     taichi.llvm.c_function_begin(
         BP(function_name_b),
         c_uint8(args_number),
@@ -325,8 +362,10 @@ def build_llvm_func(func: ast.FunctionDef):
         c_uint8(taichi.type.type_id[func.returns.attr])
     )
 
+    # 构建函数体是递归进行的
     _build_body(function_name_b, func.body)
 
+    # 显式表明结束这个函数，交给 LLVM 编译代码
     taichi.llvm.c_function_finish(
         BP(function_name_b)
     )

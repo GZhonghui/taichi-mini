@@ -4,6 +4,7 @@ from taichi.core import func
 from taichi.tool import *
 from taichi.type import *
 
+# 不想把 llvm 暴露出去
 import taichi.llvm as _llvm
 
 def init(

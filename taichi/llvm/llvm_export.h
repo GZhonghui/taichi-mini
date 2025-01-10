@@ -1,3 +1,5 @@
+// lib 的接口函数
+
 #ifndef LLVM_EXPORT_H
 #define LLVM_EXPORT_H
 

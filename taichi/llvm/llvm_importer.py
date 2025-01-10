@@ -1,7 +1,13 @@
+# C Lib 的 importer 脚本
+# 我自己的习惯是对于每一个 C Lib，都写这样一个 importer 模块
+# 处理和 C 的对接，对外部提供可直接调用的 python 函数
+# 虽然繁琐，但是 100% 可控制
+
 import os
 import ctypes
 from ctypes import POINTER, c_uint8, c_int32, c_void_p
 
+# 从外部，可以直接安全地 import *
 __all__ = [
     "c_init_lib",
     "c_set_log_level",

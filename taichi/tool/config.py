@@ -1,3 +1,5 @@
+# 管理配置
+
 import sys
 import enum
 
