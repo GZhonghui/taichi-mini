@@ -3,21 +3,26 @@
 namespace llvm_taichi
 {
 
+// 需要「正式」声明分配空间，只有头文件的 extern 不够
 std::unordered_map< std::string, std::shared_ptr<Function> > taichi_func_table;
 std::unique_ptr<LLVMUnit> taichi_llvm_unit;
 
 void init()
 {
     Out::Log(pType::DEBUG, "initing llvm lib...");
-    taichi_llvm_unit = std::make_unique<LLVMUnit>();
+    taichi_llvm_unit = std::make_unique<LLVMUnit>(); // 创建 LLVM 的全局状态
 
+    // 初始化
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
+    // 创建全局上下文
     taichi_llvm_unit->context = new llvm::LLVMContext();
+    // 感觉这个 InitModule 可有可无
     auto init_module = std::make_unique<llvm::Module>("TaichiInitModule", *(taichi_llvm_unit->context));
 
+    // 构建「执行引擎」
     std::string Error;
     llvm::ExecutionEngine *Engine = llvm::EngineBuilder(std::move(init_module)) // 转交所有权
         .setErrorStr(&Error)
@@ -32,6 +37,7 @@ void init()
     Out::Log(pType::DEBUG, "llvm lib init complated");
 
     // DEBUG
+    // 手动创建一个函数（而不是使用 Python 调用的接口），用于验证功能
     {
         auto Module = std::make_unique<llvm::Module>("debug_module", *(taichi_llvm_unit->context));
         llvm::IRBuilder<> Builder(*(taichi_llvm_unit->context));
@@ -73,11 +79,11 @@ DataType OperationValue::get_data_type(
 {
     DataType res = DataType::Int32;
     if(operation_value_type == OperationValueType::Constant) {
-        res = constant_value_type;
+        res = constant_value_type; // 常量的话就直接返回记录的类型
     } else if(operation_value_type == OperationValueType::Variable) {
         auto find_res = function->find_variable(variable_name);
         if(find_res.first) {
-            res = find_res.second;
+            res = find_res.second; // 变量的话，就找到这个变量再返回其类型
         }
     }
     return res;
@@ -90,6 +96,7 @@ llvm::Value *OperationValue::construct_llvm_value(
 ) const
 {
     llvm::Value *res = nullptr;
+    // 构造常量
     if(operation_value_type == OperationValueType::Constant) {
         uint32_t cache_32 = 0;
         uint64_t cache_64 = 0;
@@ -121,7 +128,7 @@ llvm::Value *OperationValue::construct_llvm_value(
                 res = llvm::ConstantFP::get(
                     to_llvm_type(constant_value_type, context),
                     static_cast<double>(
-                        reinterpret_cast<float&>(cache_32)
+                        reinterpret_cast<float&>(cache_32) // 这里强制转换
                     )
                 );
                 break;
@@ -133,6 +140,7 @@ llvm::Value *OperationValue::construct_llvm_value(
                 );
                 break;
         }
+    // 变量的话，直接找到其地址，然后创建一个 Load 指令就可以了
     } else if(operation_value_type == OperationValueType::Variable) {
         auto find_result = function->find_variable(variable_name);
         if(find_result.first) {
@@ -147,6 +155,9 @@ llvm::Value *OperationValue::construct_llvm_value(
 
 std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::string &variable_name)
 {
+    // 从栈顶开始找，实现作用域覆盖
+    // 注意：实际上 Python 无法做到显示声明变量，Python 在作用域内部访问一个外部已有的变量，会被视为「访问」而不是「创建」
+    // 所以这个覆盖的机制，一般只可能在 loop 的作用域内体现（loop 的 index 是强制覆盖的）
     for(int32_t i = variable_stack.size() - 1; i >= 0; i -= 1) {
         auto env = &(variable_stack[i]);
         if(env->count(variable_name)) {
@@ -154,7 +165,7 @@ std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::strin
         }
     }
     
-    return std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32);
+    return std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32); // 地址返回 nullptr 的话表示没有找到这个变量
 }
 
 // llvm::AllocaInst 是 llvm::Value 的子类
@@ -162,12 +173,16 @@ std::pair<llvm::AllocaInst *, DataType> Function::find_variable(const std::strin
 // AllocaInst 表示的是一个内存地址（即指针）
 llvm::AllocaInst *Function::alloc_variable(const std::string &name, DataType type, bool force_local)
 {
+    // 强制创建本地变量？
+    // Y: 只在栈顶找
+    // N: 正常找
     auto res = force_local ? (
         variable_stack.back().count(name)
         ? variable_stack.back()[name]
         : std::make_pair<llvm::AllocaInst *, DataType>(nullptr, DataType::Int32)
     ) : find_variable(name);
 
+    // 没有找到就分配新变量
     if(!res.first) {
         llvm::AllocaInst *ptr = current_builder->CreateAlloca(
             to_llvm_type(type, taichi_llvm_unit->context)
@@ -187,13 +202,14 @@ void Function::build_begin(
     DataType return_type
 )
 {
+    // 保存常规的函数信息
     this->name = function_name;
     this->return_type = return_type;
     
     this->argument_list.clear();
     this->variable_stack.clear();
     for(auto arg : argument_list) {
-        this->argument_list.push_back(arg);
+        this->argument_list.push_back(arg);　// 参数列表
     }
 
     this->current_module = std::make_unique<llvm::Module>(
@@ -215,12 +231,14 @@ void Function::build_begin(
     }
     llvm::ArrayRef<llvm::Type *> llvm_args_type_array(llvm_args_type);
 
+    // 创建 LLVM 的函数类型
     llvm::FunctionType *func_type = llvm::FunctionType::get(
         llvm_return_type,
         llvm_args_type_array,
         false
     );
 
+    // 创建函数
     this->llvm_function = llvm::Function::Create(
         func_type,
         llvm::Function::ExternalLinkage,
@@ -228,6 +246,7 @@ void Function::build_begin(
         *(this->current_module)
     );
 
+    // 创建起始代码块
     llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(
         *(taichi_llvm_unit->context),
         "function_entry",
@@ -236,6 +255,7 @@ void Function::build_begin(
     this->current_builder->SetInsertPoint(entry_block); // 从这个位置开始构建代码
     this->current_blocks.push(entry_block);
 
+    // 第一个作用域，也就是函数最外部的作用域
     this->variable_stack.push_back(
         std::unordered_map<
             std::string,
@@ -267,6 +287,7 @@ void Function::build_finish()
     _m += std::string(40, '=');
     Out::Log(pType::DEBUG, _m.c_str());
 
+    // 添加 Module 到 EE
     taichi_llvm_unit->engine->addModule(std::move(current_module));
 
     // 完成 JIT 编译的最后阶段
@@ -277,6 +298,7 @@ void Function::build_finish()
     Out::Log(pType::DEBUG, "function has been added to engine");
 }
 
+// loop 的栈操作比较繁琐，要注意
 void Function::loop_begin(
     const std::string &loop_index_name,
     int32_t l,
@@ -302,18 +324,20 @@ void Function::loop_begin(
         this->llvm_function
     );
 
+    // 创建一个新的变量作用域（循环体 body 的作用域）
     variable_stack.push_back(
         std::unordered_map<
             std::string,
             std::pair<llvm::AllocaInst *, DataType>
         >()
     );
+    // 注意对 block 的操作
     current_blocks.pop();
     current_blocks.push(next_block);
     current_blocks.push(if_blcok);
     current_blocks.push(body_block);
 
-    auto loop_index_ptr = alloc_variable(loop_index_name, DataType::Int32, true);
+    auto loop_index_ptr = alloc_variable(loop_index_name, DataType::Int32, true); // 强制声明一个 local 变量（不使用外部变量）
     current_builder->CreateStore(
         llvm::ConstantInt::get(
             to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
@@ -322,6 +346,7 @@ void Function::loop_begin(
         ),
         loop_index_ptr
     );
+    // 保存当前 loop 的状态
     current_loop_update.push(std::make_pair(
         loop_index_ptr,
         s
@@ -330,12 +355,13 @@ void Function::loop_begin(
     // 跳转是一种「终结指令」
     // 每个基本块只能有一个终结指令（如 br、ret 等）（必须在最后吗？应该是的）
 
+    // 开始构建 if 代码块
     current_builder->SetInsertPoint(if_blcok);
     llvm::LoadInst *load_loop_index = current_builder->CreateLoad(
         to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
         loop_index_ptr
     );
-    llvm::Value *compare_result = current_builder->CreateICmpSLT(
+    llvm::Value *compare_result = current_builder->CreateICmpSLT( // 创建比较节点
         load_loop_index,
         llvm::ConstantInt::get(
             to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
@@ -343,14 +369,17 @@ void Function::loop_begin(
             true
         )
     );
-    // 根据条件跳转
+    // 根据条件跳转，进入循环 or 跳出循环
     current_builder->CreateCondBr(compare_result, body_block, next_block);
+    // if 代码块 构建完成
 
+    // 开始构建 body 代码块
     current_builder->SetInsertPoint(body_block);
 }
 
 void Function::loop_finish()
 {
+    // loop 结束的时候，loop index 要增加一个步进的长度
     llvm::LoadInst *load = current_builder->CreateLoad(
         to_llvm_type(DataType::Int32, taichi_llvm_unit->context),
         current_loop_update.top().first
@@ -368,13 +397,14 @@ void Function::loop_finish()
         current_loop_update.top().first
     );
     current_blocks.pop();
-    current_builder->CreateBr(current_blocks.top()); // if
+    current_builder->CreateBr(current_blocks.top()); // loop 结束之后 一定是跳转到 if 块
     current_blocks.pop();
 
+    // loop 的作用域结束了
     variable_stack.pop_back();
     current_loop_update.pop();
     
-    current_builder->SetInsertPoint(current_blocks.top());
+    current_builder->SetInsertPoint(current_blocks.top()); // loop 结束之后的代码块
 }
 
 void Function::assignment_statement(
@@ -382,16 +412,16 @@ void Function::assignment_statement(
     const OperationValue &value
 )
 {
-    if(name == value.variable_name) return;
+    if(name == value.variable_name) return; // 同名赋值
 
     auto target_find_result = find_variable(name);
     if(!target_find_result.first) {
-        alloc_variable(name, value.get_data_type(this));
+        alloc_variable(name, value.get_data_type(this)); // 找不到，就说明是新变量，在这里创建这个新变量
     }
 
     target_find_result = find_variable(name);
     current_builder->CreateStore(
-        cast(
+        cast( // 在 Store 之前，需要进行类型转换
             value.get_data_type(this),
             target_find_result.second,
             value.construct_llvm_value(
@@ -417,6 +447,7 @@ void Function::assignment_statement(
     if(!find_result.first) {
         DataType left_type = left_value.get_data_type(this);
         DataType right_type = right_value.get_data_type(this);
+        // 如果要创建新变量存储计算结果，新变量的类型需要计算得到（自动类型提升）
         DataType result_type = calc_type(left_type, right_type);
 
         alloc_variable(result_name, result_type);
@@ -461,13 +492,13 @@ void Function::assignment_statement(
                     llvm_right_value
                 );
             } else if(is_float(result_type)) {
-                llvm_result = current_builder->CreateFAdd(
+                llvm_result = current_builder->CreateFAdd( // 浮点数加法
                     llvm_left_value,
                     llvm_right_value
                 );
             }
             break;
-        case OperationType::Sub:
+        case OperationType::Sub: // 减法
             if(is_int(result_type)) {
                 llvm_result = current_builder->CreateSub(
                     llvm_left_value,
@@ -480,7 +511,7 @@ void Function::assignment_statement(
                 );
             }
             break;
-        case OperationType::Mul:
+        case OperationType::Mul: // 乘法
             if(is_int(result_type)) {
                 llvm_result = current_builder->CreateMul(
                     llvm_left_value,
@@ -495,12 +526,12 @@ void Function::assignment_statement(
             break;
         case OperationType::Div:
             if(is_int(result_type)) {
-                llvm_result = current_builder->CreateSDiv(
+                llvm_result = current_builder->CreateSDiv( // S 表示有符号，这里是有符号的整数除法
                     llvm_left_value,
                     llvm_right_value
                 );
             } else if(is_float(result_type)) {
-                llvm_result = current_builder->CreateFDiv(
+                llvm_result = current_builder->CreateFDiv( // 浮点数除法
                     llvm_left_value,
                     llvm_right_value
                 );
@@ -516,6 +547,7 @@ void Function::return_statement(const std::string &return_variable_name)
 {
     auto find_result = find_variable(return_variable_name);
     if(find_result.first) {
+        // 找到这个变量之后 Load
         llvm::LoadInst *load_value = current_builder->CreateLoad(
             to_llvm_type(
                 find_result.second,
@@ -523,6 +555,7 @@ void Function::return_statement(const std::string &return_variable_name)
             ),
             find_result.first
         );
+        // Load 之后 Cast 类型转换
         llvm::Value *cast_value = cast(
             find_result.second,
             return_type,
@@ -530,6 +563,7 @@ void Function::return_statement(const std::string &return_variable_name)
             current_builder.get(),
             taichi_llvm_unit->context
         );
+        // 之后返回这个 Value
         current_builder->CreateRet(cast_value);
     } else {
         current_builder->CreateRet(llvm_default_value(
@@ -539,6 +573,7 @@ void Function::return_statement(const std::string &return_variable_name)
     }
 }
 
+// 这个函数不能执行，主要是由于EE->runFunction的限制
 std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer)
 {
     Byte *local_result_buffer = new Byte[type_size(return_type)];
@@ -547,6 +582,7 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer
     uint32_t cache_32 = 0;
     uint64_t cache_64 = 0;
     std::vector<llvm::GenericValue> args;
+    // 解析传入的参数值，构建一个 LLVM 的参数列表
     for(auto arg : this->argument_list) {
         args.push_back(llvm::GenericValue());
         // 创建一个 GenericValue
@@ -591,12 +627,14 @@ std::shared_ptr<Byte[]> Function::run(Byte *argument_buffer, Byte *result_buffer
             args_array
         );
 
+        // 获得返回值
         uint64_t result_value = result.IntVal.getZExtValue();
         Byte *src_buffer = (Byte *)&result_value;
         memcpy(local_result_buffer, src_buffer, type_size(return_type)); // CHECK
         memcpy(result_buffer, src_buffer, type_size(return_type));
     }
 
+    // 把返回值直接当作 Bytes 返回，这里不做类型解析（也没办法做）
     return std::shared_ptr<Byte[]>(local_result_buffer, std::default_delete<Byte[]>());
 }
 

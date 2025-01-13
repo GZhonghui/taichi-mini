@@ -16,6 +16,7 @@ void function_begin(
     uint8_t *args_name,
     uint8_t return_type
 ) {
+    // 所有的函数都是注册到 llvm_taichi::taichi_func_table 里面的
     std::string function_name_s = std::string((char *)function_name);
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto error = "function " + function_name_s + " has been registered";
@@ -27,7 +28,7 @@ void function_begin(
 
     std::vector<std::string> args_name_v;
     std::string _cache;
-    while(*args_name) {
+    while(*args_name) { // args_name 中分割出参数名称（使用逗号分割）
         char c = reinterpret_cast<char&>(*args_name);
         if(c == ',') {
             if(_cache.length()) {
@@ -54,6 +55,7 @@ void function_begin(
     _m += std::string(") <=====");
     Out::Log(pType::DEBUG, _m.c_str());
 
+    // 注册新函数
     auto this_func = std::make_shared<llvm_taichi::Function>();
     llvm_taichi::taichi_func_table[function_name_s] = this_func;
 
@@ -65,6 +67,7 @@ void function_begin(
         });
     }
     
+    // 开始函数定义
     this_func->build_begin(
         function_name_s,
         args_v,
@@ -81,7 +84,7 @@ void function_finish(
 
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
-        this_func->build_finish();
+        this_func->build_finish(); // 结束函数定义
     }
 }
 
@@ -95,7 +98,7 @@ extern "C" void loop_begin(
     std::string function_name_s = std::string((char *)function_name);
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
-        this_func->loop_begin(
+        this_func->loop_begin( // 开始循环定义
             std::string((char *)loop_index_name),
             l,
             r,
@@ -110,7 +113,7 @@ extern "C" void loop_finish(
     std::string function_name_s = std::string((char *)function_name);
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
-        this_func->loop_finish();
+        this_func->loop_finish(); // 结束循环
     }
 }
 
@@ -127,7 +130,8 @@ void assignment_statement_value(
     auto this_func = llvm_taichi::taichi_func_table[function_name_s];
 
     llvm_taichi::OperationValue value;
-    value.from_buffer(source_buffer);
+    value.from_buffer(source_buffer); // 直接从 buffer 解析得到一个 Value
+    // 定义赋值语句
     this_func->assignment_statement(
         std::string((char *)target_variable_name),
         value
@@ -151,6 +155,7 @@ void assignment_statement_operation(
     llvm_taichi::OperationValue left, right;
     left.from_buffer(left_buffer);
     right.from_buffer(right_buffer);
+    // 定义赋值语句
     this_func->assignment_statement(
         std::string((char *)target_variable_name),
         left,
@@ -166,6 +171,7 @@ void return_statement(
     std::string function_name_s = std::string((char *)function_name);
     if(llvm_taichi::taichi_func_table.count(function_name_s)) {
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
+        // 定义 return
         this_func->return_statement(std::string((char *)return_variable_name));
     }
 }
@@ -181,7 +187,7 @@ void run(
     }
 
     auto this_func = llvm_taichi::taichi_func_table[function_name_s];
-    this_func->run(argument_buffer, result_buffer);
+    this_func->run(argument_buffer, result_buffer); // 在 C 端调用函数，实际上这种方式并不可行
 }
 
 void *get_func_ptr(
@@ -193,6 +199,7 @@ void *get_func_ptr(
         auto this_func = llvm_taichi::taichi_func_table[function_name_s];
         auto llvm_func_ptr = this_func->get_raw_ptr();
         if(llvm_func_ptr) {
+            // 注意要得到原始指针
             return llvm_taichi::taichi_llvm_unit->engine->getPointerToFunction(llvm_func_ptr);
         }
     }
